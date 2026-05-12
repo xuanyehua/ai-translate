@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import uuid
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 
 from app import mineru_service
 from app.parser import parse_document
@@ -55,7 +56,7 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
         tmp_path = Path(tmp.name)
 
     try:
-        markdown, doc_ext, _images = parse_document(tmp_path)
+        markdown, doc_ext, images = parse_document(tmp_path)
     except Exception as e:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(500, "解析失败")
@@ -63,6 +64,7 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
     tmp_path.unlink(missing_ok=True)
 
     task_id = uuid.uuid4().hex[:12]
+    _results[task_id] = {"images": images}
 
     async def event_stream():
         # Send original markdown
@@ -77,19 +79,18 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
         translated_parts: list[str] = []
         async for i, text, total in translate_document_stream(markdown, target_lang):
             if i == -1:
-                # Start signal with total chunks
                 yield _sse_event("start", {"total": total})
             else:
                 translated_parts.append(text)
                 yield _sse_event("chunk", {"index": i, "text": text, "total": total})
 
         full_translated = "\n\n".join(translated_parts)
-        _results[task_id] = {
+        _results[task_id].update({
             "original": markdown,
             "translated": full_translated,
             "ext": doc_ext,
             "filename": file.filename,
-        }
+        })
 
         yield _sse_event("done", {
             "task_id": task_id,
@@ -106,6 +107,26 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.get("/api/images/{task_id}/{filename}")
+async def serve_image(task_id: str, filename: str):
+    result = _results.get(task_id)
+    if not result:
+        raise HTTPException(404, "Task not found")
+
+    images: dict[str, str] = result.get("images", {})
+    data_uri = images.get(filename)
+    if not data_uri:
+        raise HTTPException(404, "Image not found")
+
+    # data_uri format: "data:image/jpeg;base64,xxx"
+    try:
+        header, base64_data = data_uri.split(",", 1)
+        mime_type = header.removeprefix("data:").split(";")[0]
+        return Response(content=base64.b64decode(base64_data), media_type=mime_type)
+    except (ValueError, KeyError):
+        raise HTTPException(500, "Invalid image data")
 
 
 @app.get("/api/download")

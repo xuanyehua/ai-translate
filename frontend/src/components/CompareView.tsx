@@ -14,26 +14,43 @@ interface Props {
   totalChunks?: number
 }
 
+/** Convert HTML <table> to Markdown table, strip <img> tags, cleanup. */
+function preprocessMarkdown(md: string): string {
+  // Convert HTML tables to Markdown tables
+  let result = md.replace(/<table>([\s\S]*?)<\/table>/gi, (_match, content) => {
+    const rows = content.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || []
+    if (rows.length === 0) return ''
+    const mdRows: string[] = []
+    let isHeader = true
+    for (const row of rows) {
+      const cells = row.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi) || []
+      const values = cells.map((c: string) => c.replace(/<\/?t[dh][^>]*>/gi, '').trim().replace(/\|/g, '\\|'))
+      mdRows.push('| ' + values.join(' | ') + ' |')
+      if (isHeader) {
+        mdRows.push('| ' + values.map(() => '---').join(' | ') + ' |')
+        isHeader = false
+      }
+    }
+    return '\n\n' + mdRows.join('\n') + '\n\n'
+  })
+
+  return result
+}
+
 function splitIntoBlocks(markdown: string): string[] {
   const blocks = markdown.split(/\n\n+/)
   return blocks.filter(b => b.trim()).map(b => b.trim())
 }
 
+function preprocessImages(md: string, taskId: string): string {
+  return md.replace(/!\[([^\]]*)\]\(images\/([^)]+)\)/g, (_m: string, alt: string, file: string) => {
+    return `![${alt}](/api/images/${taskId}/${file})`
+  })
+}
+
 function MarkdownBlock({ content }: { content: string }) {
   return (
-    <div className="prose prose-slate dark:prose-invert prose-sm max-w-none
-      prose-headings:text-slate-900 dark:prose-headings:text-slate-100
-      prose-p:text-slate-700 dark:prose-p:text-slate-300
-      prose-code:bg-slate-100 dark:prose-code:bg-slate-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-      prose-pre:bg-slate-100 dark:prose-pre:bg-slate-800 prose-pre:rounded-lg prose-pre:p-4
-      prose-a:text-violet-600 dark:prose-a:text-violet-400
-      prose-li:text-slate-700 dark:prose-li:text-slate-300
-      prose-blockquote:border-l-violet-500 prose-blockquote:text-slate-600 dark:prose-blockquote:text-slate-400
-      prose-img:rounded-xl
-      [&_table]:border-collapse [&_th]:border [&_th]:border-slate-300 [&_td]:border [&_td]:border-slate-300
-      [&_th]:bg-slate-50 dark:[&_th]:bg-slate-800 [&_th]:px-3 [&_th]:py-1 [&_td]:px-3 [&_td]:py-1
-      [&_th]:text-sm [&_td]:text-sm [&_table]:w-full
-    ">
+    <div className="markdown-content text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
@@ -45,8 +62,12 @@ function MarkdownBlock({ content }: { content: string }) {
 }
 
 export function CompareView({ taskId, original, translated, isStreaming, translatedCount, totalChunks }: Props) {
-  const originalBlocks = splitIntoBlocks(original)
-  const translatedBlocks = splitIntoBlocks(translated)
+  const rawOriginal = preprocessMarkdown(original)
+  const rawTranslated = preprocessMarkdown(translated)
+  const processedOriginal = taskId ? preprocessImages(rawOriginal, taskId) : rawOriginal
+  const processedTranslated = taskId ? preprocessImages(rawTranslated, taskId) : rawTranslated
+  const originalBlocks = splitIntoBlocks(processedOriginal)
+  const translatedBlocks = splitIntoBlocks(processedTranslated)
   const maxLen = Math.max(originalBlocks.length, isStreaming ? originalBlocks.length : translatedBlocks.length)
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)

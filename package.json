@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.19",
     "katex": "^0.16.45",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",

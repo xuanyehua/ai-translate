@@ -29,7 +29,7 @@ def parse_document(file_path: Path) -> tuple[str, str, dict[str, str]]:
             "return_middle_json": "false",
             "return_model_output": "false",
             "return_content_list": "false",
-            "return_images": "false",
+            "return_images": "true",
             "response_format_zip": "false",
             "return_original_file": "false",
             "start_page_id": "0",

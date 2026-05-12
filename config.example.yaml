@@ -1,0 +1,24 @@
+# AI Translate 配置文件
+# 复制为 config.yaml 并填入你的配置
+
+# MinerU 本地 API 地址（mineru-api 启动后的地址）
+mineru_api_url: "http://127.0.0.1:3000"
+
+# 翻译引擎配置
+translator:
+  # 类型：openai（兼容 OpenAI API 的所有服务）
+  type: "openai"
+  # API Key
+  api_key: "your-api-key"
+  # API Base URL
+  # OpenAI: https://api.openai.com/v1
+  # Claude: https://api.anthropic.com/v1
+  # DeepSeek: https://api.deepseek.com
+  base_url: "https://api.openai.com/v1"
+  # 模型名称
+  # OpenAI: gpt-4o, gpt-4o-mini
+  # Claude: claude-sonnet-4-6-20250514
+  # DeepSeek: deepseek-chat
+  model: "gpt-4o"
+  # 分块大小（每块最大字符数，避免超出 API 限制）
+  chunk_size: 2000

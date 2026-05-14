@@ -151,7 +151,7 @@ export default function App() {
           <div className="max-w-xl mx-auto space-y-8">
             <div className="text-center space-y-2">
               <h2 className="text-3xl font-bold text-slate-900 dark:text-white">文档翻译</h2>
-              <p className="text-slate-500 dark:text-slate-400">支持 PDF、Word、Markdown 格式，保留原文档格式</p>
+              <p className="text-slate-500 dark:text-slate-400">支持 PDF、Word、PPT、Excel、Markdown 及图片，保留原文档格式</p>
             </div>
 
             <FileUpload onFileSelect={handleTranslate} inputRef={fileInputRef} />

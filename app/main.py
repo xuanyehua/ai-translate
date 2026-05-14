@@ -135,9 +135,9 @@ async def download(task_id: str):
     if not result:
         raise HTTPException(404, "Translation result not found")
 
-    file_bytes, mime_type = convert(result["translated"], result["ext"])
+    file_bytes, mime_type, out_ext = convert(result["translated"], result["ext"])
     base_name = Path(result["filename"]).stem
-    out_name = f"{base_name}_translated.{result['ext']}"
+    out_name = f"{base_name}_translated.{out_ext}"
 
     return StreamingResponse(
         iter([file_bytes]),

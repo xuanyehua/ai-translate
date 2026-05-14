@@ -46,7 +46,7 @@ export function FileUpload({ onFileSelect, inputRef }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,.docx,.md"
+        accept=".pdf,.docx,.pptx,.xlsx,.md,.png,.jpg,.jpeg,.bmp,.tiff,.webp,.gif"
         onChange={handleChange}
         className="hidden"
       />
@@ -68,7 +68,7 @@ export function FileUpload({ onFileSelect, inputRef }: Props) {
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
               拖拽文件到此处，或 <span className="text-violet-600 dark:text-violet-400">点击选择</span>
             </p>
-            <p className="text-xs text-slate-500">支持 .pdf .docx .md</p>
+            <p className="text-xs text-slate-500">支持 .pdf .docx .pptx .xlsx .md 及图片</p>
           </div>
         )}
       </div>

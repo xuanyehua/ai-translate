@@ -83,16 +83,81 @@ def convert_to_pdf(markdown: str) -> bytes:
     return pdf.output()
 
 
-def convert(markdown: str, ext: str) -> tuple[bytes, str]:
+def convert_to_pptx(markdown: str) -> bytes:
+    """将翻译后的 Markdown 转为 .pptx 文件字节流（每页标题 + 内容）。"""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    # Split by ## headings to create slides
+    sections = markdown.split("\n## ")
+    for i, section in enumerate(sections):
+        lines = section.strip().split("\n")
+        if not lines:
+            continue
+
+        slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
+
+        # Title
+        title = lines[0].lstrip("#").strip()
+        left = Inches(1)
+        top = Inches(0.5)
+        txBox = slide.shapes.add_textbox(left, top, Inches(11.333), Inches(1))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = title
+        p.font.size = Inches(0.6)
+        p.font.bold = True
+
+        # Content
+        body_lines = lines[1:] if len(lines) > 1 else []
+        clean_lines = [re.sub(r"^[#*>\-\s]+", "", l).strip() for l in body_lines]
+        clean_lines = [l for l in clean_lines if l]
+        if clean_lines:
+            top = Inches(1.8)
+            txBox = slide.shapes.add_textbox(left, top, Inches(11.333), Inches(5))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            for j, line in enumerate(clean_lines):
+                p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                p.text = line
+                p.font.size = Inches(0.35)
+                p.space_after = Inches(0.15)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+# Format -> (output extension, MIME type)
+_OUTPUT_MAP: dict[str, tuple[str, str]] = {
+    "md": ("md", "text/markdown"),
+    "docx": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    "pptx": ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    "pdf": ("pdf", "application/pdf"),
+    # image formats + xlsx → output as markdown
+}
+
+_CONVERTERS = {
+    "docx": convert_to_docx,
+    "pptx": convert_to_pptx,
+    "pdf": convert_to_pdf,
+}
+
+
+def convert(markdown: str, ext: str) -> tuple[bytes, str, str]:
     """
     将翻译后的 Markdown 转为原文档格式。
-    返回 (文件字节流, MIME type)。
+    返回 (文件字节流, MIME type, 输出扩展名)。
     """
-    if ext == "md":
-        return markdown.encode("utf-8"), "text/markdown"
-    elif ext == "docx":
-        return convert_to_docx(markdown), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    elif ext == "pdf":
-        return convert_to_pdf(markdown), "application/pdf"
+    converter = _CONVERTERS.get(ext)
+    out_ext, mime = _OUTPUT_MAP.get(ext, ("md", "text/markdown"))
+
+    if converter:
+        return converter(markdown), mime, out_ext
     else:
-        return markdown.encode("utf-8"), "text/markdown"
+        return markdown.encode("utf-8"), mime, out_ext

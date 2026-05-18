@@ -94,6 +94,12 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
         }
         _results[task_id].update(record)
 
+        yield _sse_event("done", {
+            "task_id": task_id,
+            "ext": doc_ext,
+            "filename": file.filename,
+        })
+
         asyncio.create_task(_persist_translation(task_id, {
             "task_id": task_id,
             "filename": file.filename,
@@ -104,12 +110,6 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
             "status": "completed",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }))
-
-        yield _sse_event("done", {
-            "task_id": task_id,
-            "ext": doc_ext,
-            "filename": file.filename,
-        })
 
     return StreamingResponse(
         event_stream(),

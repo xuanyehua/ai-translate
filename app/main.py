@@ -7,6 +7,7 @@ import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -148,6 +149,8 @@ async def serve_image(task_id: str, filename: str):
 
 @app.get("/api/translations")
 async def get_translations(q: str = "", page: int = 1, limit: int = 20):
+    page = max(1, page)
+    limit = min(limit, 100)
     offset = (page - 1) * limit
     items, total = list_translations(search=q, limit=limit, offset=offset)
     return {"items": items, "total": total}
@@ -198,5 +201,5 @@ async def download(task_id: str):
     return StreamingResponse(
         iter([file_bytes]),
         media_type=mime_type,
-        headers={"Content-Disposition": f"attachment; filename={out_name}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(out_name)}"},
     )

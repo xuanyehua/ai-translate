@@ -1,6 +1,9 @@
 """Persistent storage for translation results using JSON files."""
 import json
 import logging
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -16,18 +19,30 @@ def _ensure_dir() -> None:
 
 
 def _task_path(task_id: str) -> Path:
+    """Return the file path for a given task_id, after validating task_id."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', task_id):
+        raise ValueError(f"Invalid task_id: {task_id}")
     return BASE_DIR / f"{task_id}.json"
 
 
-def save_translation(task_id: str, data: dict) -> None:
-    """Save translation result to a JSON file. Creates directory if needed."""
+def save_translation(task_id: str, data: dict) -> bool:
+    """Save translation result to a JSON file. Returns True on success, False on failure."""
     try:
         _ensure_dir()
         path = _task_path(task_id)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # Atomic write: temp file + rename
+        fd, tmp = tempfile.mkstemp(dir=BASE_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except Exception:
+            os.unlink(tmp)
+            raise
+        return True
     except Exception:
         logger.exception(f"Failed to save translation for task {task_id}")
+        return False
 
 
 def load_translation(task_id: str) -> Optional[dict]:

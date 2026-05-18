@@ -1,9 +1,11 @@
+import asyncio
 import base64
 import json
 import logging
 import uuid
 import tempfile
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -14,6 +16,7 @@ from app import mineru_service
 from app.parser import parse_document
 from app.translator import translate_document_stream
 from app.converter import convert
+from app.storage import save_translation, load_translation, list_translations
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,7 +60,7 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
 
     try:
         markdown, doc_ext, images = parse_document(tmp_path)
-    except Exception as e:
+    except Exception:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(500, "è§£æžå¤±è´¥")
 
@@ -67,7 +70,6 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
     _results[task_id] = {"images": images}
 
     async def event_stream():
-        # Send original markdown
         yield _sse_event("original", {
             "markdown": markdown,
             "ext": doc_ext,
@@ -75,7 +77,6 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
             "task_id": task_id,
         })
 
-        # Stream translated chunks
         translated_parts: list[str] = []
         async for i, text, total in translate_document_stream(markdown, target_lang):
             if i == -1:
@@ -85,12 +86,24 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
                 yield _sse_event("chunk", {"index": i, "text": text, "total": total})
 
         full_translated = "\n\n".join(translated_parts)
-        _results[task_id].update({
+        record = {
             "original": markdown,
             "translated": full_translated,
             "ext": doc_ext,
             "filename": file.filename,
-        })
+        }
+        _results[task_id].update(record)
+
+        asyncio.create_task(_persist_translation(task_id, {
+            "task_id": task_id,
+            "filename": file.filename,
+            "ext": doc_ext,
+            "target_lang": target_lang,
+            "original": markdown,
+            "translated": full_translated,
+            "status": "completed",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }))
 
         yield _sse_event("done", {
             "task_id": task_id,
@@ -109,6 +122,11 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("ä¸­æ–
     )
 
 
+async def _persist_translation(task_id: str, data: dict) -> None:
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, save_translation, task_id, data)
+
+
 @app.get("/api/images/{task_id}/{filename}")
 async def serve_image(task_id: str, filename: str):
     result = _results.get(task_id)
@@ -120,7 +138,6 @@ async def serve_image(task_id: str, filename: str):
     if not data_uri:
         raise HTTPException(404, "Image not found")
 
-    # data_uri format: "data:image/jpeg;base64,xxx"
     try:
         header, base64_data = data_uri.split(",", 1)
         mime_type = header.removeprefix("data:").split(";")[0]
@@ -129,14 +146,53 @@ async def serve_image(task_id: str, filename: str):
         raise HTTPException(500, "Invalid image data")
 
 
+@app.get("/api/translations")
+async def get_translations(q: str = "", page: int = 1, limit: int = 20):
+    offset = (page - 1) * limit
+    items, total = list_translations(search=q, limit=limit, offset=offset)
+    return {"items": items, "total": total}
+
+
+@app.get("/api/translations/{task_id}")
+async def get_translation_detail(task_id: str):
+    result = _results.get(task_id)
+    if result:
+        return {
+            "task_id": task_id,
+            "filename": result.get("filename", ""),
+            "ext": result.get("ext", "md"),
+            "original": result.get("original", ""),
+            "translated": result.get("translated", ""),
+        }
+    record = load_translation(task_id)
+    if not record:
+        raise HTTPException(404, "Translation result not found")
+    return {
+        "task_id": task_id,
+        "filename": record.get("filename", ""),
+        "ext": record.get("ext", "md"),
+        "original": record.get("original", ""),
+        "translated": record.get("translated", ""),
+    }
+
+
 @app.get("/api/download")
 async def download(task_id: str):
     result = _results.get(task_id)
     if not result:
-        raise HTTPException(404, "Translation result not found")
+        record = load_translation(task_id)
+        if not record:
+            raise HTTPException(404, "Translation result not found")
+        translated = record.get("translated", "")
+        ext = record.get("ext", "md")
+        filename = record.get("filename", task_id)
+    else:
+        translated = result["translated"]
+        ext = result["ext"]
+        filename = result["filename"]
 
-    file_bytes, mime_type, out_ext = convert(result["translated"], result["ext"])
-    base_name = Path(result["filename"]).stem
+    file_bytes, mime_type, out_ext = convert(translated, ext)
+    base_name = Path(filename).stem
     out_name = f"{base_name}_translated.{out_ext}"
 
     return StreamingResponse(

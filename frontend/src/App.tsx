@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback } from 'react'
 import { FileUpload } from './components/FileUpload'
 import { CompareView } from './components/CompareView'
+import { HistoryView } from './components/HistoryView'
 
 type AppStatus = 'idle' | 'uploading' | 'translating' | 'done' | 'error'
+type AppView = 'translate' | 'history'
 
 const LANGUAGES = [
   { value: '中文', label: '中文' },
@@ -15,11 +17,11 @@ const LANGUAGES = [
 ]
 
 export default function App() {
+  const [view, setView] = useState<AppView>('translate')
   const [status, setStatus] = useState<AppStatus>('idle')
   const [targetLang, setTargetLang] = useState('中文')
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Streaming translation state
   const [taskId, setTaskId] = useState<string | undefined>()
   const [originalMarkdown, setOriginalMarkdown] = useState('')
   const [translatedChunks, setTranslatedChunks] = useState<string[]>([])
@@ -29,6 +31,7 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null)
 
   const handleTranslate = useCallback(async (file: File) => {
+    setView('translate')
     setStatus('uploading')
     setErrorMsg('')
     setOriginalMarkdown('')
@@ -134,84 +137,107 @@ export default function App() {
             </div>
             <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI Translate</h1>
           </div>
-          {(status === 'done' || status === 'translating') && (
+
+          <div className="flex items-center gap-1">
             <button
-              onClick={handleReset}
-              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+              onClick={() => setView('translate')}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                view === 'translate'
+                  ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
               翻译新文档
             </button>
-          )}
+            <button
+              onClick={() => setView('history')}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                view === 'history'
+                  ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              翻译历史
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Upload View */}
-        {status === 'idle' && (
-          <div className="max-w-xl mx-auto space-y-8">
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white">文档翻译</h2>
-              <p className="text-slate-500 dark:text-slate-400">支持 PDF、Word、PPT、Excel、Markdown 及图片，保留原文档格式</p>
-            </div>
+        {/* Translate View */}
+        {view === 'translate' && (
+          <>
+            {/* Upload View */}
+            {status === 'idle' && (
+              <div className="max-w-xl mx-auto space-y-8">
+                <div className="text-center space-y-2">
+                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white">文档翻译</h2>
+                  <p className="text-slate-500 dark:text-slate-400">支持 PDF、Word、PPT、Excel、Markdown 及图片，保留原文档格式</p>
+                </div>
 
-            <FileUpload onFileSelect={handleTranslate} inputRef={fileInputRef} />
+                <FileUpload onFileSelect={handleTranslate} inputRef={fileInputRef} />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">目标语言</label>
-              <select
-                value={targetLang}
-                onChange={e => setTargetLang(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none transition-all"
-              >
-                {LANGUAGES.map(lang => (
-                  <option key={lang.value} value={lang.value}>{lang.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">目标语言</label>
+                  <select
+                    value={targetLang}
+                    onChange={e => setTargetLang(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none transition-all"
+                  >
+                    {LANGUAGES.map(lang => (
+                      <option key={lang.value} value={lang.value}>{lang.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Uploading spinner */}
+            {status === 'uploading' && (
+              <div className="max-w-md mx-auto text-center space-y-6 pt-20">
+                <div className="relative w-16 h-16 mx-auto">
+                  <div className="absolute inset-0 border-4 border-slate-200 dark:border-slate-700 rounded-full" />
+                  <div className="absolute inset-0 border-4 border-violet-600 rounded-full border-t-transparent animate-spin" />
+                </div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">正在解析文档...</p>
+              </div>
+            )}
+
+            {/* Translating & done — show CompareView */}
+            {(status === 'translating' || status === 'done') && originalMarkdown && (
+              <CompareView
+                taskId={taskId}
+                original={originalMarkdown}
+                translated={translatedMarkdown}
+                isStreaming={status === 'translating'}
+                translatedCount={translatedCount}
+                totalChunks={totalChunks}
+              />
+            )}
+
+            {/* Error View */}
+            {status === 'error' && (
+              <div className="max-w-md mx-auto text-center space-y-4 pt-20">
+                <div className="w-16 h-16 mx-auto rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">翻译失败</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm">{errorMsg}</p>
+                <button
+                  onClick={handleReset}
+                  className="px-6 py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors"
+                >
+                  重试
+                </button>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Uploading spinner */}
-        {status === 'uploading' && (
-          <div className="max-w-md mx-auto text-center space-y-6 pt-20">
-            <div className="relative w-16 h-16 mx-auto">
-              <div className="absolute inset-0 border-4 border-slate-200 dark:border-slate-700 rounded-full" />
-              <div className="absolute inset-0 border-4 border-violet-600 rounded-full border-t-transparent animate-spin" />
-            </div>
-            <p className="text-slate-600 dark:text-slate-400 text-sm">正在解析文档...</p>
-          </div>
-        )}
-
-        {/* Translating & done — show CompareView */}
-        {(status === 'translating' || status === 'done') && originalMarkdown && (
-          <CompareView
-            taskId={taskId}
-            original={originalMarkdown}
-            translated={translatedMarkdown}
-            isStreaming={status === 'translating'}
-            translatedCount={translatedCount}
-            totalChunks={totalChunks}
-          />
-        )}
-
-        {/* Error View */}
-        {status === 'error' && (
-          <div className="max-w-md mx-auto text-center space-y-4 pt-20">
-            <div className="w-16 h-16 mx-auto rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">翻译失败</h3>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">{errorMsg}</p>
-            <button
-              onClick={handleReset}
-              className="px-6 py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors"
-            >
-              重试
-            </button>
-          </div>
-        )}
+        {/* History View */}
+        {view === 'history' && <HistoryView />}
       </main>
     </div>
   )

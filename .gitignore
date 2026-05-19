@@ -37,3 +37,6 @@ package-lock.json
 # MinerU temp
 /tmp/mineru-*
 .claude/
+
+# Translation data
+data/

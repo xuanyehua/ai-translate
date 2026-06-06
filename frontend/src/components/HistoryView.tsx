@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CompareView } from './CompareView'
 
 interface TranslationSummary {
   task_id: string
@@ -18,6 +17,10 @@ interface TranslationRecord {
   translated: string
 }
 
+interface Props {
+  onViewTranslation: (data: TranslationRecord) => void
+}
+
 function formatDate(iso: string): string {
   try {
     const d = new Date(iso)
@@ -30,20 +33,17 @@ function formatDate(iso: string): string {
   }
 }
 
-export function HistoryView() {
+export function HistoryView({ onViewTranslation }: Props) {
   const [items, setItems] = useState<TranslationSummary[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const [expanded, setExpanded] = useState<TranslationRecord | null>(null)
-
   const limit = 20
 
   const fetchList = useCallback(async () => {
     setLoading(true)
-    setExpanded(null)
     try {
       const resp = await fetch(
         `/api/translations?q=${encodeURIComponent(search)}&page=${page}&limit=${limit}`
@@ -60,19 +60,19 @@ export function HistoryView() {
 
   useEffect(() => { fetchList() }, [fetchList])
 
-  const handleExpand = async (task_id: string) => {
+  const handleView = async (task_id: string) => {
     try {
       const resp = await fetch(`/api/translations/${task_id}`)
       if (!resp.ok) return
       const data: TranslationRecord = await resp.json()
-      setExpanded(data)
+      onViewTranslation(data)
     } catch {}
   }
 
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold text-slate-900 dark:text-white">翻译历史</h2>
         <p className="text-slate-500 dark:text-slate-400">查看、搜索和下载过往翻译记录</p>
@@ -120,54 +120,35 @@ export function HistoryView() {
               </div>
 
               <div className="flex items-center gap-2">
-                {expanded?.task_id === item.task_id ? (
-                  <button
-                    onClick={() => setExpanded(null)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                  >
-                    收起
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleExpand(item.task_id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30"
-                    >
-                      查看
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const resp = await fetch(`/api/download?task_id=${item.task_id}`)
-                          const blob = await resp.blob()
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = item.filename.replace(/\.[^.]+$/, '') + `_translated.${item.ext}`
-                          document.body.appendChild(a)
-                          a.click()
-                          document.body.removeChild(a)
-                          URL.revokeObjectURL(url)
-                        } catch {}
-                      }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    >
-                      下载
-                    </button>
-                  </>
-                )}
+                <button
+                  onClick={() => handleView(item.task_id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30"
+                >
+                  查看
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const resp = await fetch(`/api/download?task_id=${item.task_id}`)
+                      const blob = await resp.blob()
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = item.filename.replace(/\.[^.]+$/, '') + `_translated.${item.ext}`
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(url)
+                    } catch {}
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  下载
+                </button>
               </div>
             </div>
           ))}
 
-          {/* Expanded comparison */}
-          {expanded && (
-            <CompareView
-              taskId={expanded.task_id}
-              original={expanded.original}
-              translated={expanded.translated}
-            />
-          )}
         </div>
       )}
 

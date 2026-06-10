@@ -62,6 +62,7 @@ cd frontend && npm run dev
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/translate` | POST | SSE 流式翻译，接收文件 + target_lang |
+| `/api/translate/{task_id}/chat` | POST | SSE RAG 文档对话，接收 question |
 | `/api/translations` | GET | 翻译历史列表，支持 `?q=搜索&page=1&limit=20` |
 | `/api/translations/{task_id}` | GET | 获取单个翻译详情（原文 + 译文） |
 | `/api/download?task_id=` | GET | 下载翻译完成的文件 |

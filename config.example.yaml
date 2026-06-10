@@ -22,3 +22,12 @@ translator:
   model: "gpt-4o"
   # 分块大小（每块最大字符数，避免超出 API 限制）
   chunk_size: 2000
+
+# Embedding 配置（用于 RAG 文档对话）
+embedding:
+  # provider: local（本地模型）或 openai（远程 API）
+  provider: "local"
+  # 模型名称
+  # local: all-MiniLM-L6-v2（推荐，轻量快速）
+  # openai: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
+  model: "all-MiniLM-L6-v2"

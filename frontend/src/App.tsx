@@ -2,9 +2,10 @@ import { useState, useRef, useCallback } from 'react'
 import { FileUpload } from './components/FileUpload'
 import { CompareView } from './components/CompareView'
 import { HistoryView } from './components/HistoryView'
+import { ChatView } from './components/ChatView'
 
 type AppStatus = 'idle' | 'uploading' | 'translating' | 'done' | 'error'
-type AppView = 'translate' | 'history'
+type AppView = 'translate' | 'history' | 'chat'
 
 const LANGUAGES = [
   { value: '中文', label: '中文' },
@@ -26,6 +27,7 @@ export default function App() {
   const [originalMarkdown, setOriginalMarkdown] = useState('')
   const [translatedChunks, setTranslatedChunks] = useState<string[]>([])
   const [totalChunks, setTotalChunks] = useState(0)
+  const [chatTaskId, setChatTaskId] = useState<string>('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -212,6 +214,7 @@ export default function App() {
                 isStreaming={status === 'translating'}
                 translatedCount={translatedCount}
                 totalChunks={totalChunks}
+                onChatClick={status === 'done' ? () => { setChatTaskId(taskId || ''); setView('chat') } : undefined}
               />
             )}
 
@@ -247,6 +250,14 @@ export default function App() {
               setStatus('done')
               setView('translate')
             }}
+          />
+        )}
+
+        {/* Chat View */}
+        {view === 'chat' && chatTaskId && (
+          <ChatView
+            taskId={chatTaskId}
+            onBack={() => setView('translate')}
           />
         )}
       </main>

@@ -12,6 +12,7 @@ interface Props {
   isStreaming?: boolean
   translatedCount?: number
   totalChunks?: number
+  onChatClick?: () => void
 }
 
 /** Convert HTML <table> to Markdown table, strip <img> tags, cleanup. */
@@ -61,7 +62,7 @@ function MarkdownBlock({ content }: { content: string }) {
   )
 }
 
-export function CompareView({ taskId, original, translated, isStreaming, translatedCount, totalChunks }: Props) {
+export function CompareView({ taskId, original, translated, isStreaming, translatedCount, totalChunks, onChatClick }: Props) {
   const rawOriginal = preprocessMarkdown(original)
   const rawTranslated = preprocessMarkdown(translated)
   const processedOriginal = taskId ? preprocessImages(rawOriginal, taskId) : rawOriginal
@@ -128,17 +129,30 @@ export function CompareView({ taskId, original, translated, isStreaming, transla
             <span className="text-xs text-slate-500">同步滚动</span>
           </label>
         </div>
-        {!isStreaming && taskId && (
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            下载翻译文件
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onChatClick && (
+            <button
+              onClick={onChatClick}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+              AI 对话
+            </button>
+          )}
+          {!isStreaming && taskId && (
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              下载翻译文件
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Compare Panels */}

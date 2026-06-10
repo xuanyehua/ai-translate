@@ -18,6 +18,7 @@ from app.parser import parse_document
 from app.translator import translate_document_stream
 from app.converter import convert
 from app.storage import save_translation, load_translation, list_translations
+from app.rag import build_chunk_store, ChunkStore, generate_answer_stream
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ app.add_middleware(
 )
 
 _results: dict[str, dict] = {}
+_rag_stores: dict[str, ChunkStore] = {}
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -112,6 +114,9 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
             "created_at": datetime.now(timezone.utc).isoformat(),
         }))
 
+        # Build RAG index in background
+        asyncio.create_task(_build_rag(task_id, full_translated))
+
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
@@ -126,6 +131,17 @@ async def translate(file: UploadFile = File(...), target_lang: str = Form("中�
 async def _persist_translation(task_id: str, data: dict) -> None:
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, save_translation, task_id, data)
+
+
+async def _build_rag(task_id: str, translated_md: str) -> None:
+    """Async wrapper to build RAG index from translated markdown."""
+    loop = asyncio.get_running_loop()
+    store = await loop.run_in_executor(None, build_chunk_store, translated_md)
+    if store is not None:
+        _rag_stores[task_id] = store
+        logger.info(f"RAG index built for task {task_id} ({len(store.chunks)} chunks)")
+    else:
+        logger.warning(f"Failed to build RAG index for task {task_id}")
 
 
 @app.get("/api/images/{task_id}/{filename}")
@@ -177,6 +193,30 @@ async def get_translation_detail(task_id: str):
         "original": record.get("original", ""),
         "translated": record.get("translated", ""),
     }
+
+
+@app.post("/api/translate/{task_id}/chat")
+async def chat_with_document(task_id: str, question: str = Form(...)):
+    if not question.strip():
+        raise HTTPException(400, "Question cannot be empty")
+
+    store = _rag_stores.get(task_id)
+    if store is None:
+        raise HTTPException(503, "AI 助手正在准备中，请稍后重试")
+
+    async def event_stream():
+        async for event, data in generate_answer_stream(store, question.strip()):
+            yield _sse_event(event, data)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/download")

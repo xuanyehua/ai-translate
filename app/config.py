@@ -41,5 +41,13 @@ class Config:
     def chunk_size(self) -> int:
         return self._data.get("translator", {}).get("chunk_size", 2000)
 
+    @property
+    def embedding_provider(self) -> str:
+        return self._data.get("embedding", {}).get("provider", "local")
+
+    @property
+    def embedding_model(self) -> str:
+        return self._data.get("embedding", {}).get("model", "all-MiniLM-L6-v2")
+
 
 config = Config()

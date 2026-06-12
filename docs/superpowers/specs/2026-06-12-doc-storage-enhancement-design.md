@@ -5,18 +5,20 @@
 
 ## 背景
 
-当前项目存在三个体验问题：
+当前项目存在四个体验问题：
 1. 翻译后的图片只存内存，服务重启即丢失，历史记录里图片显示 404
 2. RAG 向量索引每次重启都要重建（首次提问要等 embedding 加载 + 文档分块）
 3. AI 对话和对照查看是两个独立页面，对话时看不到原文/译文
+4. AI 对话是单轮独立问答（不带历史），对话记录也不持久化（重启或切页就丢）
 
-本设计解决这三个问题。
+本设计解决这四个问题。
 
 ## 目标
 
-1. **完整持久化**：原文 Markdown、译文 Markdown、图片、RAG 索引全部存盘
+1. **完整持久化**：原文 Markdown、译文 Markdown、图片、RAG 索引、对话记录全部存盘
 2. **Embedding 状态可见**：用户能看到状态，并能手动触发构建
 3. **侧边对话**：AI 对话改为右侧可收起的抽屉，不离开对照查看
+4. **多轮对话**：后端带最近 N 轮历史调用 LLM，支持上下文引用
 
 ## 存储结构
 
@@ -35,6 +37,7 @@ data/translations/
       chunks.json        # 块文本数组 ["块1内容", "块2内容", ...]
       index.faiss        # FAISS 二进制索引
       meta.json          # embedding 元数据（模型名、维度）
+    chat.jsonl           # 多轮对话记录（每行一条消息）
 ```
 
 **meta.json 格式：**
@@ -71,6 +74,17 @@ data/translations/
 ```
 
 加载索引时校验模型名一致，否则需要重建。
+
+**chat.jsonl 格式（每行一条消息）：**
+
+```jsonl
+{"role": "user", "content": "第一章讲了什么", "ts": "2026-06-12T13:00:00Z"}
+{"role": "assistant", "content": "第一章讲了 XYZ ...", "ts": "2026-06-12T13:00:05Z"}
+{"role": "user", "content": "它的核心结论是什么？", "ts": "2026-06-12T13:01:00Z"}
+{"role": "assistant", "content": "结论是 ABC ...", "ts": "2026-06-12T13:01:08Z"}
+```
+
+JSONL 选择理由：可追加（无需读取整文件即可写入新消息）、损坏单行不影响其他记录。
 
 ## 后端设计
 
@@ -168,7 +182,7 @@ POST /api/translations/{task_id}/embed
 
 不再读内存，改为读磁盘 `data/translations/{task_id}/images/{filename}`。
 
-**3.6 修改 chat 端点**
+**3.6 修改 chat 端点（支持多轮对话）**
 
 ```python
 POST /api/translate/{task_id}/chat
@@ -176,8 +190,38 @@ POST /api/translate/{task_id}/chat
 
 逻辑：
 - 检查 meta.json 中 `embedding_status == "ready"`，否则返回 503
-- 从 `_rag_stores` 内存缓存查；没有则 `ChunkStore.load(rag_dir)`
-- 后续流程不变
+- 读取 `chat.jsonl` 最近 N 轮（N=10）作为对话历史
+- 把当前问题追加写入 `chat.jsonl`（user 消息）
+- RAG 检索 → 拼接 prompt → LLM 调用（messages 包含历史 + 当前问题）
+- 流式返回；回答完整收尾后追加写入 `chat.jsonl`（assistant 消息）
+
+LLM messages 拼接：
+
+```python
+messages = [
+    {"role": "system", "content": "你是文档助手。基于文档片段和对话上下文回答用户问题。"},
+    *recent_history,  # chat.jsonl 最近 10 条
+    {"role": "user", "content": f"""文档片段：
+{retrieved_chunks}
+
+当前问题：{question}"""},
+]
+```
+
+**3.7 新增对话历史端点**
+
+```python
+GET /api/translate/{task_id}/chat/history
+```
+返回完整对话记录（前端进入抽屉时加载）：
+```json
+{ "messages": [{"role": "user", "content": "...", "ts": "..."}, ...] }
+```
+
+```python
+DELETE /api/translate/{task_id}/chat/history
+```
+清空对话记录（删除 chat.jsonl）。
 
 ## 前端设计
 
@@ -248,7 +292,10 @@ POST /api/translate/{task_id}/chat
 **特性：**
 - 与 ChatView 功能一致（SSE、Markdown 渲染、建议问题）
 - 顶部 [《 收起] 按钮关闭抽屉
-- 抽屉关闭时对话历史保留（再次展开还能看到）
+- 顶部 [清空对话] 按钮（调用 DELETE /chat/history）
+- 抽屉首次展开时调用 GET /chat/history 加载持久化历史
+- 抽屉关闭时对话历史保留（前端 state 保留，再次展开不需要重新拉取）
+- 多轮对话：用户输入"它"、"上面那个"等代词时，AI 能基于历史理解
 - 抽屉宽度固定（适合宽屏，窄屏可考虑响应式后续优化）
 
 ### 4. `App.tsx` 修改
@@ -325,6 +372,8 @@ SSE 流式返回回答
 | 索引文件损坏 | `ChunkStore.load()` 返回 None，前端显示「构建索引」 |
 | 模型变更后旧索引不可用 | meta.json 校验失败，触发重建 |
 | 手动触发时正在构建 | 返回 409，前端提示「正在构建中」 |
+| chat.jsonl 损坏（某行 JSON 非法）| 跳过损坏行，其余记录仍可用 |
+| chat.jsonl 不存在 | 视为空对话记录，正常返回 |
 
 ## 迁移路径
 
@@ -343,4 +392,4 @@ SSE 流式返回回答
 - 多用户隔离（仍然全局可见）
 - 索引压缩（FAISS Flat 索引，文档少时不需要）
 - 跨语言重新构建索引（仅当 `embedding_model` 改变才触发重建）
-- 对话历史持久化（每次切换页面仍重置）
+- 对话历史搜索（多轮存盘，但不提供搜索功能）

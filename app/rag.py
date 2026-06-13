@@ -1,5 +1,7 @@
 """RAG engine: chunk translated Markdown, build FAISS index, search and answer."""
+import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -64,7 +66,6 @@ def chunk_document(markdown: str, max_chars: int = 500) -> list[str]:
     """Split translated Markdown into chunks by ## headings, each ≤ max_chars."""
     import re
 
-    # Split on ## headings (h2+)
     sections = re.split(r"\n(?=#{2,6}\s)", markdown)
     chunks: list[str] = []
 
@@ -73,12 +74,10 @@ def chunk_document(markdown: str, max_chars: int = 500) -> list[str]:
         if not section:
             continue
 
-        # If section is short enough, keep as-is
         if len(section) <= max_chars:
             chunks.append(section)
             continue
 
-        # Split long sections by paragraphs
         heading_match = re.match(r"^(#{2,6}\s.+)", section)
         heading = heading_match.group(1) if heading_match else ""
         body = section[heading_match.end():].strip() if heading_match else section
@@ -104,12 +103,22 @@ def chunk_document(markdown: str, max_chars: int = 500) -> list[str]:
 class ChunkStore:
     """Holds chunks and their FAISS index for a single document."""
 
-    def __init__(self, chunks: list[str], vectors: np.ndarray):
+    def __init__(self, chunks: list[str], vectors_or_index, dim: Optional[int] = None):
+        """Construct from vectors (build index) or from a pre-loaded faiss.Index.
+
+        - If vectors_or_index is a numpy array: build a new IndexFlatL2.
+        - If it's a faiss.Index: use directly (load path).
+        """
         import faiss
         self.chunks = chunks
-        dim = vectors.shape[1]
-        self.index = faiss.IndexFlatL2(dim)
-        self.index.add(vectors.astype(np.float32))
+        if isinstance(vectors_or_index, np.ndarray):
+            d = vectors_or_index.shape[1]
+            self.index = faiss.IndexFlatL2(d)
+            self.index.add(vectors_or_index.astype(np.float32))
+            self.dim = d
+        else:
+            self.index = vectors_or_index
+            self.dim = dim or self.index.d
 
     def search(self, query: str, top_k: int = 5) -> list[str]:
         """Search for the most relevant chunks to the query."""
@@ -121,9 +130,65 @@ class ChunkStore:
                 results.append(self.chunks[i])
         return results
 
+    def save(self, rag_dir: Path) -> None:
+        """Persist chunks + FAISS index + metadata to rag_dir."""
+        import faiss
+        rag_dir.mkdir(parents=True, exist_ok=True)
+        with open(rag_dir / "chunks.json", "w", encoding="utf-8") as f:
+            json.dump(self.chunks, f, ensure_ascii=False, indent=2)
+        faiss.write_index(self.index, str(rag_dir / "index.faiss"))
+        meta = {
+            "model": config.embedding_model,
+            "provider": config.embedding_provider,
+            "dim": self.dim,
+            "chunk_count": len(self.chunks),
+        }
+        with open(rag_dir / "meta.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
 
-def build_chunk_store(markdown: str) -> Optional[ChunkStore]:
-    """Build a ChunkStore from translated Markdown. Returns None on failure."""
+    @classmethod
+    def load(cls, rag_dir: Path) -> Optional["ChunkStore"]:
+        """Load from disk. Returns None if missing or model/provider mismatched."""
+        import faiss
+        meta_path = rag_dir / "meta.json"
+        chunks_path = rag_dir / "chunks.json"
+        index_path = rag_dir / "index.faiss"
+
+        if not (meta_path.exists() and chunks_path.exists() and index_path.exists()):
+            return None
+
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            # Validate model/provider
+            if meta.get("model") != config.embedding_model:
+                logger.warning(
+                    f"Embedding model changed: stored={meta.get('model')} "
+                    f"vs current={config.embedding_model}, index needs rebuild"
+                )
+                return None
+            if meta.get("provider") != config.embedding_provider:
+                logger.warning(
+                    f"Embedding provider changed: stored={meta.get('provider')} "
+                    f"vs current={config.embedding_provider}, index needs rebuild"
+                )
+                return None
+
+            with open(chunks_path, "r", encoding="utf-8") as f:
+                chunks = json.load(f)
+            index = faiss.read_index(str(index_path))
+            return cls(chunks, index, dim=meta.get("dim"))
+        except Exception:
+            logger.exception(f"Failed to load ChunkStore from {rag_dir}")
+            return None
+
+
+def build_chunk_store(markdown: str, rag_dir: Optional[Path] = None) -> Optional[ChunkStore]:
+    """Build a ChunkStore from translated Markdown.
+
+    If rag_dir is provided, persist the store to disk after building.
+    Returns None on failure.
+    """
     try:
         chunks = chunk_document(markdown)
         if not chunks:
@@ -131,21 +196,34 @@ def build_chunk_store(markdown: str) -> Optional[ChunkStore]:
             return None
 
         vectors = _embed(chunks)
-        return ChunkStore(chunks, vectors)
+        store = ChunkStore(chunks, vectors)
+
+        if rag_dir is not None:
+            try:
+                store.save(rag_dir)
+            except Exception:
+                logger.exception(f"Failed to save ChunkStore to {rag_dir}")
+                # Still return store; caller decides what to do
+
+        return store
     except Exception:
         logger.exception("Failed to build RAG index")
         return None
 
 
-async def generate_answer_stream(store: ChunkStore, question: str):
-    """SSE async generator: search chunks, build prompt, stream LLM answer.
+async def generate_answer_stream(
+    store: ChunkStore,
+    question: str,
+    history: Optional[list[dict]] = None,
+):
+    """SSE async generator: search chunks, build prompt with history, stream LLM answer.
 
+    history: list of {"role", "content"} dicts (recent turns).
     Yields (event_type, data_dict) tuples.
     """
     import asyncio
     from app.translator import get_translator
 
-    # 1. Search for relevant chunks
     yield "thinking", {"message": "正在检索相关内容..."}
 
     loop = asyncio.get_running_loop()
@@ -157,28 +235,40 @@ async def generate_answer_stream(store: ChunkStore, question: str):
         yield "done", {"message": "未找到相关信息，请尝试换个问法"}
         return
 
-    # 2. Build prompt
     context = "\n\n---\n\n".join(relevant_chunks)
-    prompt = f"""你是一个文档助手，基于以下文档片段回答问题。如果文档片段中没有相关信息，请如实告知用户。
-
-文档片段：
+    user_prompt = f"""文档片段：
 {context}
 
-用户问题：{question}
+当前问题：{question}"""
 
-回答："""
+    # Build messages: system + history + current question with retrieval
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": (
+                "你是一个专业、友好的文档助手。基于提供的文档片段和对话上下文，用中文回答用户问题。"
+                "如果文档片段中没有相关信息，请如实告知用户。"
+            ),
+        },
+    ]
 
-    # 3. Stream LLM answer
+    # Append cleaned history (only role + content, drop ts)
+    if history:
+        for msg in history:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+
+    messages.append({"role": "user", "content": user_prompt})
+
     translator = get_translator()
     try:
         resp = await loop.run_in_executor(
             None,
             lambda: translator.client.chat.completions.create(
                 model=translator.model,
-                messages=[
-                    {"role": "system", "content": "你是一个专业、友好的文档助手。请用中文回答。"},
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 temperature=0.5,
                 stream=True,
             ),

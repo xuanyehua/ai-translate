@@ -62,9 +62,12 @@ cd frontend && npm run dev
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/translate` | POST | SSE 流式翻译，接收文件 + target_lang |
-| `/api/translate/{task_id}/chat` | POST | SSE RAG 文档对话，接收 question |
-| `/api/translations` | GET | 翻译历史列表，支持 `?q=搜索&page=1&limit=20` |
+| `/api/translate/{task_id}/chat` | POST | SSE 多轮 RAG 对话，接收 question |
+| `/api/translate/{task_id}/chat/history` | GET | 获取该文档的对话记录 |
+| `/api/translate/{task_id}/chat/history` | DELETE | 清空对话记录 |
+| `/api/translations` | GET | 翻译历史列表，含 embedding_status |
 | `/api/translations/{task_id}` | GET | 获取单个翻译详情（原文 + 译文） |
+| `/api/translations/{task_id}/embed` | POST | 手动触发 RAG 索引构建 |
 | `/api/download?task_id=` | GET | 下载翻译完成的文件 |
 | `/api/images/{task_id}/{filename}` | GET | 获取文档内嵌图片 |
 

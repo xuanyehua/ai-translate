@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { FileUpload } from './components/FileUpload'
 import { CompareView } from './components/CompareView'
 import { HistoryView } from './components/HistoryView'
 
 type AppStatus = 'idle' | 'uploading' | 'translating' | 'done' | 'error'
 type AppView = 'translate' | 'history'
+type EmbeddingStatus = 'pending' | 'building' | 'ready' | 'failed'
 
 const LANGUAGES = [
   { value: '中文', label: '中文' },
@@ -26,9 +27,41 @@ export default function App() {
   const [originalMarkdown, setOriginalMarkdown] = useState('')
   const [translatedChunks, setTranslatedChunks] = useState<string[]>([])
   const [totalChunks, setTotalChunks] = useState(0)
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus>('pending')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const pollRef = useRef<number | null>(null)
+
+  // Poll embedding status while building or after done
+  const pollEmbeddingStatus = useCallback((tid: string) => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current)
+    }
+    const tick = async () => {
+      try {
+        const resp = await fetch(`/api/translations/${tid}`)
+        if (!resp.ok) return
+        const data = await resp.json()
+        const s = (data.embedding_status || 'pending') as EmbeddingStatus
+        setEmbeddingStatus(s)
+        if (s === 'ready' || s === 'failed') {
+          if (pollRef.current) {
+            window.clearInterval(pollRef.current)
+            pollRef.current = null
+          }
+        }
+      } catch {}
+    }
+    tick()
+    pollRef.current = window.setInterval(tick, 3000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current)
+    }
+  }, [])
 
   const handleTranslate = useCallback(async (file: File) => {
     setView('translate')
@@ -38,6 +71,7 @@ export default function App() {
     setTranslatedChunks([])
     setTotalChunks(0)
     setTaskId(undefined)
+    setEmbeddingStatus('pending')
 
     const formData = new FormData()
     formData.append('file', file)
@@ -63,6 +97,7 @@ export default function App() {
       const reader = resp.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let finalTaskId: string | undefined
 
       while (true) {
         const { done, value } = await reader.read()
@@ -81,6 +116,7 @@ export default function App() {
               case 'original':
                 setOriginalMarkdown(data.markdown)
                 setTaskId(data.task_id)
+                finalTaskId = data.task_id
                 break
               case 'start':
                 setTotalChunks(data.total)
@@ -95,6 +131,7 @@ export default function App() {
                 break
               case 'done':
                 setTaskId(data.task_id)
+                finalTaskId = data.task_id
                 setStatus('done')
                 break
               case 'error':
@@ -103,32 +140,52 @@ export default function App() {
           }
         }
       }
+
+      // Start polling embedding status after translation completes
+      if (finalTaskId) {
+        pollEmbeddingStatus(finalTaskId)
+      }
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') return
       setStatus('error')
       setErrorMsg(e instanceof Error ? e.message : 'Unknown error')
     }
-  }, [targetLang])
+  }, [targetLang, pollEmbeddingStatus])
 
   const handleReset = () => {
     abortRef.current?.abort()
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
     setStatus('idle')
     setOriginalMarkdown('')
     setTranslatedChunks([])
     setTotalChunks(0)
     setTaskId(undefined)
     setErrorMsg('')
+    setEmbeddingStatus('pending')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
+
+  const handleTriggerEmbed = useCallback(async () => {
+    if (!taskId) return
+    try {
+      const resp = await fetch(`/api/translations/${taskId}/embed`, { method: 'POST' })
+      if (resp.status === 202 || resp.ok) {
+        setEmbeddingStatus('building')
+        pollEmbeddingStatus(taskId)
+      }
+    } catch {}
+  }, [taskId, pollEmbeddingStatus])
 
   const translatedMarkdown = translatedChunks.filter(Boolean).join('\n\n')
   const translatedCount = translatedChunks.filter(Boolean).length
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      {/* Header */}
       <header className="border-b border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -163,11 +220,9 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Translate View */}
+      <main className="max-w-[1600px] mx-auto px-6 py-8">
         {view === 'translate' && (
           <>
-            {/* Upload View */}
             {status === 'idle' && (
               <div className="max-w-xl mx-auto space-y-8">
                 <div className="text-center space-y-2">
@@ -192,7 +247,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Uploading spinner */}
             {status === 'uploading' && (
               <div className="max-w-md mx-auto text-center space-y-6 pt-20">
                 <div className="relative w-16 h-16 mx-auto">
@@ -203,7 +257,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Translating & done — show CompareView */}
             {(status === 'translating' || status === 'done') && originalMarkdown && (
               <CompareView
                 taskId={taskId}
@@ -212,10 +265,11 @@ export default function App() {
                 isStreaming={status === 'translating'}
                 translatedCount={translatedCount}
                 totalChunks={totalChunks}
+                embeddingStatus={embeddingStatus}
+                onTriggerEmbed={status === 'done' ? handleTriggerEmbed : undefined}
               />
             )}
 
-            {/* Error View */}
             {status === 'error' && (
               <div className="max-w-md mx-auto text-center space-y-4 pt-20">
                 <div className="w-16 h-16 mx-auto rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
@@ -236,7 +290,6 @@ export default function App() {
           </>
         )}
 
-        {/* History View */}
         {view === 'history' && (
           <HistoryView
             onViewTranslation={(data) => {

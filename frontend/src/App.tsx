@@ -291,16 +291,7 @@ export default function App() {
         )}
 
         {view === 'history' && (
-          <HistoryView
-            onViewTranslation={(data) => {
-              setTaskId(data.task_id)
-              setOriginalMarkdown(data.original)
-              setTranslatedChunks([data.translated])
-              setTotalChunks(1)
-              setStatus('done')
-              setView('translate')
-            }}
-          />
+          <HistoryView />
         )}
       </main>
     </div>

@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { CompareView } from './CompareView'
+
+type EmbeddingStatus = 'pending' | 'building' | 'ready' | 'failed'
 
 interface TranslationSummary {
   task_id: string
@@ -7,6 +10,7 @@ interface TranslationSummary {
   target_lang: string
   status: string
   created_at: string
+  embedding_status: EmbeddingStatus
 }
 
 interface TranslationRecord {
@@ -15,10 +19,7 @@ interface TranslationRecord {
   ext: string
   original: string
   translated: string
-}
-
-interface Props {
-  onViewTranslation: (data: TranslationRecord) => void
+  embedding_status?: EmbeddingStatus
 }
 
 function formatDate(iso: string): string {
@@ -33,14 +34,35 @@ function formatDate(iso: string): string {
   }
 }
 
-export function HistoryView({ onViewTranslation }: Props) {
+function StatusBadge({ status }: { status: EmbeddingStatus }) {
+  if (status === 'ready') {
+    return <span className="text-xs text-emerald-600 dark:text-emerald-400">🟢 索引就绪</span>
+  }
+  if (status === 'building') {
+    return (
+      <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+        <span className="w-2.5 h-2.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+        构建中
+      </span>
+    )
+  }
+  if (status === 'failed') {
+    return <span className="text-xs text-red-600 dark:text-red-400">⚠️ 构建失败</span>
+  }
+  return <span className="text-xs text-slate-500">🔴 未构建</span>
+}
+
+export function HistoryView() {
   const [items, setItems] = useState<TranslationSummary[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
+  const [expanded, setExpanded] = useState<TranslationRecord | null>(null)
+
   const limit = 20
+  const pollRef = useRef<number | null>(null)
 
   const fetchList = useCallback(async () => {
     setLoading(true)
@@ -60,25 +82,66 @@ export function HistoryView({ onViewTranslation }: Props) {
 
   useEffect(() => { fetchList() }, [fetchList])
 
-  const handleView = async (task_id: string) => {
+  // Auto-poll while any item is "building"
+  useEffect(() => {
+    const anyBuilding = items.some(i => i.embedding_status === 'building')
+    if (anyBuilding) {
+      if (!pollRef.current) {
+        pollRef.current = window.setInterval(fetchList, 3000)
+      }
+    } else if (pollRef.current) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    return () => {
+      if (pollRef.current) {
+        window.clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [items, fetchList])
+
+  const handleExpand = async (task_id: string) => {
     try {
       const resp = await fetch(`/api/translations/${task_id}`)
       if (!resp.ok) return
       const data: TranslationRecord = await resp.json()
-      onViewTranslation(data)
+      setExpanded(data)
+    } catch {}
+  }
+
+  const handleTriggerEmbed = async (task_id: string) => {
+    try {
+      await fetch(`/api/translations/${task_id}/embed`, { method: 'POST' })
+      // Optimistic update
+      setItems(prev => prev.map(i => i.task_id === task_id ? { ...i, embedding_status: 'building' } : i))
+    } catch {}
+  }
+
+  const handleDownload = async (item: TranslationSummary) => {
+    try {
+      const resp = await fetch(`/api/download?task_id=${item.task_id}`)
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = item.filename.replace(/\.[^.]+$/, '') + `_translated.${item.ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     } catch {}
   }
 
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold text-slate-900 dark:text-white">翻译历史</h2>
         <p className="text-slate-500 dark:text-slate-400">查看、搜索和下载过往翻译记录</p>
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-3">
         <input
           type="text"
@@ -92,7 +155,6 @@ export function HistoryView({ onViewTranslation }: Props) {
         )}
       </div>
 
-      {/* List */}
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -114,45 +176,62 @@ export function HistoryView({ onViewTranslation }: Props) {
                 <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
                   {item.filename}
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {formatDate(item.created_at)} · {item.target_lang}
-                </p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {formatDate(item.created_at)} · {item.target_lang}
+                  </p>
+                  <StatusBadge status={item.embedding_status} />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleView(item.task_id)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30"
-                >
-                  查看
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      const resp = await fetch(`/api/download?task_id=${item.task_id}`)
-                      const blob = await resp.blob()
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = item.filename.replace(/\.[^.]+$/, '') + `_translated.${item.ext}`
-                      document.body.appendChild(a)
-                      a.click()
-                      document.body.removeChild(a)
-                      URL.revokeObjectURL(url)
-                    } catch {}
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  下载
-                </button>
+                {(item.embedding_status === 'pending' || item.embedding_status === 'failed') && (
+                  <button
+                    onClick={() => handleTriggerEmbed(item.task_id)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                  >
+                    构建索引
+                  </button>
+                )}
+                {expanded?.task_id === item.task_id ? (
+                  <button
+                    onClick={() => setExpanded(null)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  >
+                    收起
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleExpand(item.task_id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/30"
+                    >
+                      查看
+                    </button>
+                    <button
+                      onClick={() => handleDownload(item)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    >
+                      下载
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
 
+          {expanded && (
+            <CompareView
+              taskId={expanded.task_id}
+              original={expanded.original}
+              translated={expanded.translated}
+              embeddingStatus={expanded.embedding_status || items.find(i => i.task_id === expanded.task_id)?.embedding_status}
+              onTriggerEmbed={() => handleTriggerEmbed(expanded.task_id)}
+            />
+          )}
         </div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <button

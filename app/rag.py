@@ -15,6 +15,41 @@ _embed_model = None
 _embedding_dim: Optional[int] = None
 
 
+# Common alias map: HuggingFace id → ModelScope id (lower-cased keys).
+_MODELSCOPE_ALIAS = {
+    "all-minilm-l6-v2": "sentence-transformers/all-MiniLM-L6-v2",
+    "all-mpnet-base-v2": "sentence-transformers/all-mpnet-base-v2",
+    "paraphrase-multilingual-minilm-l12-v2": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+}
+
+
+def _resolve_local_model_path(model_name: str) -> str:
+    """If model_name is an absolute path, return it unchanged.
+    Otherwise download from ModelScope and return the local snapshot path.
+    Falls back to model_name on failure (sentence-transformers will then try HF).
+    """
+    from pathlib import Path as _Path
+
+    # Absolute path → use as-is
+    if _Path(model_name).is_absolute():
+        return model_name
+
+    # Resolve to ModelScope id
+    ms_id = _MODELSCOPE_ALIAS.get(model_name.lower(), model_name)
+    if "/" not in ms_id:
+        # Not a known alias, not a namespaced id → can't fetch from modelscope
+        return model_name
+
+    try:
+        from modelscope import snapshot_download
+        logger.info(f"Downloading embedding model from ModelScope: {ms_id}")
+        local_path = snapshot_download(ms_id)
+        return str(local_path)
+    except Exception:
+        logger.exception(f"Failed to download {ms_id} from ModelScope; falling back to {model_name}")
+        return model_name
+
+
 def _get_embed_model():
     """Lazy-load the embedding model based on config."""
     global _embed_model, _embedding_dim
@@ -27,8 +62,12 @@ def _get_embed_model():
 
     if provider == "local":
         from sentence_transformers import SentenceTransformer
-        logger.info(f"Loading local embedding model: {model_name}")
-        _embed_model = SentenceTransformer(model_name)
+        # If user gave a bare HF-style id (no slash, no path), download from
+        # modelscope first and load from the local snapshot path.
+        # This avoids HuggingFace network access in mainland China.
+        load_path = _resolve_local_model_path(model_name)
+        logger.info(f"Loading local embedding model: {load_path}")
+        _embed_model = SentenceTransformer(load_path)
         _embedding_dim = _embed_model.get_sentence_embedding_dimension()
     elif provider == "openai":
         from openai import OpenAI

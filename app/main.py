@@ -219,15 +219,18 @@ async def get_translations(q: str = "", page: int = 1, limit: int = 20):
 
 @app.get("/api/translations/{task_id}")
 async def get_translation_detail(task_id: str):
-    # Prefer current-session memory
+    # Prefer current-session memory; fetch embedding_status from meta.json (lazy)
     result = _results.get(task_id)
     if result and "translated" in result:
+        meta = load_meta(task_id)
+        embedding_status = meta.get("embedding_status", "pending") if meta else "pending"
         return {
             "task_id": task_id,
             "filename": result.get("filename", ""),
             "ext": result.get("ext", "md"),
             "original": result.get("original", ""),
             "translated": result.get("translated", ""),
+            "embedding_status": embedding_status,
         }
 
     meta = load_meta(task_id)

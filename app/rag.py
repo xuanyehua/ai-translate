@@ -187,7 +187,7 @@ def build_chunk_store(markdown: str, rag_dir: Optional[Path] = None) -> Optional
     """Build a ChunkStore from translated Markdown.
 
     If rag_dir is provided, persist the store to disk after building.
-    Returns None on failure.
+    Returns None on failure (build OR save failure when rag_dir is given).
     """
     try:
         chunks = chunk_document(markdown)
@@ -203,7 +203,8 @@ def build_chunk_store(markdown: str, rag_dir: Optional[Path] = None) -> Optional
                 store.save(rag_dir)
             except Exception:
                 logger.exception(f"Failed to save ChunkStore to {rag_dir}")
-                # Still return store; caller decides what to do
+                # Persistence failed → caller must mark "failed"
+                return None
 
         return store
     except Exception:

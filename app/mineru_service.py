@@ -26,8 +26,11 @@ def start() -> str:
         if _server is not None:
             return _base_url  # type: ignore[return-type]
 
-        # Use local models from modelscope (already downloaded)
-        os.environ.setdefault("MINERU_MODEL_SOURCE", "modelscope")
+        # Use local models from modelscope (already downloaded).
+        # Force-set the env var: setdefault won't overwrite an empty string,
+        # which can leave the subprocess defaulting to huggingface and timing out.
+        if not os.environ.get("MINERU_MODEL_SOURCE"):
+            os.environ["MINERU_MODEL_SOURCE"] = "modelscope"
 
         logger.info("Starting local MinerU API server...")
         _server = LocalAPIServer()

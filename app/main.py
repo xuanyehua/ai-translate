@@ -36,8 +36,49 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _migrate_legacy_storage() -> None:
+    """One-shot migration: convert old data/translations/{task_id}.json to dir layout."""
+    from app.storage import BASE_DIR, save_translation
+    if not BASE_DIR.exists():
+        return
+
+    for entry in BASE_DIR.iterdir():
+        if not entry.is_file() or entry.suffix != ".json":
+            continue
+        task_id = entry.stem
+        try:
+            with open(entry, "r", encoding="utf-8") as f:
+                old = json.load(f)
+        except Exception:
+            logger.exception(f"Failed to read legacy file {entry}, skipping")
+            continue
+
+        new_dir = BASE_DIR / task_id
+        if new_dir.exists() and new_dir.is_dir():
+            # Already migrated; just rename old file to .bak
+            entry.rename(entry.with_suffix(".json.bak"))
+            continue
+
+        try:
+            ok = save_translation(
+                task_id=task_id,
+                filename=old.get("filename", "unknown"),
+                ext=old.get("ext", "md"),
+                target_lang=old.get("target_lang", ""),
+                original_md=old.get("original", ""),
+                translated_md=old.get("translated", ""),
+                images={},  # legacy didn't persist images
+            )
+            if ok:
+                entry.rename(entry.with_suffix(".json.bak"))
+                logger.info(f"Migrated legacy translation: {task_id}")
+        except Exception:
+            logger.exception(f"Failed to migrate {task_id}, skipping")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _migrate_legacy_storage()
     mineru_service.start()
     logger.info(f"MinerU API ready at {mineru_service.get_base_url()}")
     yield

@@ -69,6 +69,24 @@ def _decode_data_uri(data_uri: str) -> tuple[bytes, str]:
     return base64.b64decode(b64), ext
 
 
+def save_images(task_id: str, images: dict[str, str]) -> bool:
+    """Persist MinerU image data URIs as files for restart-safe processing."""
+    try:
+        if not images:
+            return True
+        img_dir = task_dir(task_id) / "images"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        for img_name, data_uri in images.items():
+            if not data_uri.startswith("data:"):
+                continue
+            img_bytes, _ext = _decode_data_uri(data_uri)
+            (img_dir / Path(img_name).name).write_bytes(img_bytes)
+        return True
+    except Exception:
+        logger.exception("Failed to persist images for task %s", task_id)
+        return False
+
+
 def save_translation(
     task_id: str,
     filename: str,
@@ -92,18 +110,7 @@ def save_translation(
         (d / "translated.md").write_text(translated_md, encoding="utf-8")
 
         # Save images
-        if images:
-            img_dir = d / "images"
-            img_dir.mkdir(exist_ok=True)
-            for img_name, data_uri in images.items():
-                if not data_uri.startswith("data:"):
-                    continue
-                try:
-                    img_bytes, _ext = _decode_data_uri(data_uri)
-                    safe_name = Path(img_name).name  # strip path
-                    (img_dir / safe_name).write_bytes(img_bytes)
-                except Exception:
-                    logger.exception(f"Failed to decode image {img_name}")
+        save_images(task_id, images)
 
         meta = {
             "task_id": task_id,

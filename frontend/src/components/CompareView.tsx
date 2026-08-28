@@ -19,7 +19,7 @@ interface Props {
 
 /** Convert HTML <table> to Markdown table, strip <img> tags, cleanup. */
 function preprocessMarkdown(md: string): string {
-  let result = md.replace(/<table>([\s\S]*?)<\/table>/gi, (_match, content) => {
+  const result = md.replace(/<table>([\s\S]*?)<\/table>/gi, (_match, content) => {
     const rows = content.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || []
     if (rows.length === 0) return ''
     const mdRows: string[] = []
@@ -168,8 +168,8 @@ export function CompareView({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-slate-200 dark:border-slate-700">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 rounded-xl px-4 py-3 shadow-sm border border-slate-200 dark:border-slate-700">
+        <div className="flex flex-wrap items-center gap-4">
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">对照查看</span>
           {isStreaming && totalChunks && translatedCount !== undefined && (
             <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">
@@ -204,7 +204,7 @@ export function CompareView({
 
       {/* Compare Panels (+ optional Chat Drawer) */}
       <div
-        className={`grid gap-4 ${showChat ? 'grid-cols-[35%_35%_30%]' : 'grid-cols-2'}`}
+        className={`grid gap-4 ${showChat ? 'grid-cols-1 xl:grid-cols-[35%_35%_30%]' : 'grid-cols-1 lg:grid-cols-2'}`}
         style={{ height: 'calc(100vh - 200px)' }}
       >
         {/* Original */}

@@ -8,7 +8,6 @@ from mineru.cli.api_client import (
     LocalAPIServer,
     build_http_timeout,
     wait_for_local_api_ready,
-    find_free_port,
 )
 
 logger = logging.getLogger(__name__)

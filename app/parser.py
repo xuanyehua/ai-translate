@@ -1,7 +1,11 @@
 import httpx
+import logging
 from pathlib import Path
 
+from app.config import config
 from app.mineru_service import get_base_url
+
+logger = logging.getLogger(__name__)
 
 
 def parse_document(file_path: Path) -> tuple[str, str, dict[str, str]]:
@@ -21,7 +25,7 @@ def parse_document(file_path: Path) -> tuple[str, str, dict[str, str]]:
         files = {"files": (file_path.name, f, "application/octet-stream")}
         data = {
             "lang_list": ["ch"],
-            "backend": "pipeline",
+            "backend": config.mineru_backend,
             "parse_method": "auto",
             "formula_enable": "true",
             "table_enable": "true",
@@ -39,8 +43,15 @@ def parse_document(file_path: Path) -> tuple[str, str, dict[str, str]]:
             f"{base_url}/file_parse",
             files=files,
             data=data,
-            timeout=300,
+            timeout=httpx.Timeout(10.0, read=config.mineru_timeout, write=config.mineru_timeout),
         )
+        if resp.status_code >= 400:
+            logger.error(
+                "MinerU /file_parse returned %s for %s: %s",
+                resp.status_code,
+                file_path.name,
+                resp.text[:2000],
+            )
         resp.raise_for_status()
         result = resp.json()
 

@@ -22,12 +22,7 @@
 ### 1. 安装依赖
 
 ```bash
-# Python
-uv sync
-uv pip install "mineru[core]"
-
-# 前端
-cd frontend && npm install
+make install
 ```
 
 ### 2. 配置
@@ -48,20 +43,32 @@ translator:
 ### 3. 启动
 
 ```bash
-# 终端 1 — 后端
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
-
-# 终端 2 — 前端
-cd frontend && npm run dev
+make dev
 ```
 
 访问 `http://127.0.0.1:5173`
+
+后端会自动启动 MinerU，并默认设置 `MINERU_MODEL_SOURCE=modelscope`。停止服务时，在运行 `make dev` 的终端按 `Ctrl+C`。
+
+```bash
+# 也可以分别启动，方便单独查看日志
+make backend
+make frontend
+```
+
+上传、解析、翻译和索引由后端任务队列独立执行。关闭或刷新页面不会中断任务，页面会通过任务 ID 恢复进度；服务重启后会从已保存的解析结果和翻译分段继续。
 
 ## API
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/translate` | POST | SSE 流式翻译，接收文件 + target_lang |
+| `/api/tasks` | POST | 创建异步翻译任务，立即返回 task_id |
+| `/api/tasks` | GET | 查询全部任务及处理状态 |
+| `/api/tasks/{task_id}` | GET | 查询任务进度与当前结果 |
+| `/api/tasks/{task_id}/events` | GET | 订阅任务状态；断线不影响任务 |
+| `/api/tasks/{task_id}/retry` | POST | 重试失败、中断或取消的任务 |
+| `/api/tasks/{task_id}/cancel` | POST | 请求取消任务 |
 | `/api/translate/{task_id}/chat` | POST | SSE 多轮 RAG 对话，接收 question |
 | `/api/translate/{task_id}/chat/history` | GET | 获取该文档的对话记录 |
 | `/api/translate/{task_id}/chat/history` | DELETE | 清空对话记录 |

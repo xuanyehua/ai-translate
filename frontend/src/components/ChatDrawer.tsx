@@ -8,6 +8,12 @@ interface Message {
   ts?: string
 }
 
+interface RawMessage {
+  role?: string
+  content?: string
+  ts?: string
+}
+
 interface Props {
   taskId: string
   onClose: () => void
@@ -33,9 +39,11 @@ export function ChatDrawer({ taskId, onClose }: Props) {
       .then(r => r.ok ? r.json() : { messages: [] })
       .then(data => {
         if (cancelled) return
-        const cleaned: Message[] = (data.messages || [])
-          .filter((m: any) => m.role === 'user' || m.role === 'assistant')
-          .map((m: any) => ({ role: m.role, content: m.content, ts: m.ts }))
+        const cleaned: Message[] = ((data.messages || []) as RawMessage[])
+          .filter((m): m is RawMessage & { role: 'user' | 'assistant', content: string } =>
+            (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
+          )
+          .map(m => ({ role: m.role, content: m.content, ts: m.ts }))
         setMessages(cleaned)
         setLoaded(true)
       })
@@ -128,7 +136,9 @@ export function ChatDrawer({ taskId, onClose }: Props) {
     try {
       await fetch(`/api/translate/${taskId}/chat/history`, { method: 'DELETE' })
       setMessages([])
-    } catch {}
+    } catch (error) {
+      console.error('Failed to clear chat history:', error)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

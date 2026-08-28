@@ -17,6 +17,7 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "faiss-cpu>=1.8.0",
     "numpy>=1.26.0",
+    "mineru[core]>=3.0.0",
 ]
 
 [project.optional-dependencies]

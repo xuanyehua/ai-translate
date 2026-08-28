@@ -24,15 +24,13 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
-# uv lock (optional, keep if you want reproducible builds)
-uv.lock
-
 # Python build artifacts
 ai_translate.egg-info/
 
 # Node (frontend + accidental root)
 node_modules/
 package-lock.json
+!frontend/package-lock.json
 
 # MinerU temp
 /tmp/mineru-*

@@ -22,6 +22,19 @@ class Config:
         return self._data.get("mineru_api_url", os.getenv("MINERU_API_URL", "http://127.0.0.1:3000"))
 
     @property
+    def mineru_backend(self) -> str:
+        # MinerU 解析后端：pipeline（传统流水线，CPU 友好）、
+        # vlm-transformers / vlm-vllm-engine（纯 VLM）、
+        # hybrid-auto-engine（pipeline + VLM 混合，按页面自动择优）
+        return self._data.get("mineru_backend", os.getenv("MINERU_BACKEND", "pipeline"))
+
+    @property
+    def mineru_timeout(self) -> int:
+        # MinerU /file_parse 读取超时（秒）。大 PDF / 带公式表格的论文解析较慢，
+        # 默认 600s。连接超时固定 10s（本地服务）。
+        return int(self._data.get("mineru_timeout", os.getenv("MINERU_TIMEOUT", "600")))
+
+    @property
     def translator_type(self) -> str:
         return self._data.get("translator", {}).get("type", os.getenv("TRANSLATOR_TYPE", "openai"))
 
@@ -39,15 +52,15 @@ class Config:
 
     @property
     def chunk_size(self) -> int:
-        return self._data.get("translator", {}).get("chunk_size", 2000)
+        return int(os.getenv("TRANSLATOR_CHUNK_SIZE", self._data.get("translator", {}).get("chunk_size", 2000)))
 
     @property
     def embedding_provider(self) -> str:
-        return self._data.get("embedding", {}).get("provider", "local")
+        return os.getenv("EMBEDDING_PROVIDER", self._data.get("embedding", {}).get("provider", "local"))
 
     @property
     def embedding_model(self) -> str:
-        return self._data.get("embedding", {}).get("model", "all-MiniLM-L6-v2")
+        return os.getenv("EMBEDDING_MODEL", self._data.get("embedding", {}).get("model", "all-MiniLM-L6-v2"))
 
 
 config = Config()

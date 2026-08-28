@@ -4,6 +4,17 @@
 # MinerU 本地 API 地址（mineru-api 启动后的地址）
 mineru_api_url: "http://127.0.0.1:3000"
 
+# MinerU 解析后端
+#   pipeline          传统流水线（公式/表格/OCR 组合，CPU 可跑）
+#   vlm-transformers  纯 VLM（transformers 推理，需 VLM 权重）
+#   vlm-vllm-engine   纯 VLM（vLLM 推理，需 GPU + VLM 权重）
+#   hybrid-auto-engine pipeline + VLM 混合，按页面自动择优（需 VLM 权重，建议 GPU）
+mineru_backend: "pipeline"
+
+# MinerU 解析超时（秒）。大 PDF / 带公式表格的论文解析较慢，默认 600s。
+# 连接超时固定 10s（本地服务）。解析超时会在日志里看到 httpx.ReadTimeout。
+mineru_timeout: 600
+
 # 翻译引擎配置
 translator:
   # 类型：openai（兼容 OpenAI API 的所有服务）

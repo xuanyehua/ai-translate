@@ -37,7 +37,13 @@ export function TaskList({ items, expandedTaskId, showDownload, onCancel, onRetr
     <div className="space-y-2">
       {items.map(item => (
         <Fragment key={item.task_id}>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-4 transition-all">
+        <div
+          role={onView ? 'button' : undefined}
+          tabIndex={onView ? 0 : undefined}
+          onClick={() => onView?.(item.task_id)}
+          onKeyDown={event => { if (onView && (event.key === 'Enter' || event.key === ' ')) onView(item.task_id) }}
+          className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-4 transition-all ${onView ? 'cursor-pointer hover:border-violet-300 dark:hover:border-violet-700 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40' : ''}`}
+        >
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.filename}</p>
             <div className="flex flex-wrap items-center gap-3 mt-0.5">
@@ -45,7 +51,7 @@ export function TaskList({ items, expandedTaskId, showDownload, onCancel, onRetr
               <TaskStatus item={item} />
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
             {item.status === 'completed' && (item.embedding_status === 'pending' || item.embedding_status === 'failed') && onEmbed && <button onClick={() => onEmbed(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">构建索引</button>}
             {ACTIVE_STATUSES.has(item.status) && <button onClick={() => onCancel(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">取消</button>}
             {(item.status === 'failed' || item.status === 'cancelled') && <button onClick={() => onRetry(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">重试</button>}

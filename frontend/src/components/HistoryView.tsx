@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CompareView } from './CompareView'
 import { TaskList } from './TaskList'
-import type { TranslationRecord, TranslationSummary } from './taskTypes'
+import type { TranslationSummary } from './taskTypes'
 import { useTaskEvents } from './useTaskEvents'
 
-export function HistoryView() {
+export function HistoryView({ onOpenTask }: { onOpenTask: (taskId: string) => void }) {
+  const initialParams = new URLSearchParams(window.location.search)
   const [items, setItems] = useState<TranslationSummary[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(() => Math.max(1, Number(initialParams.get('page')) || 1))
+  const [search, setSearch] = useState(() => initialParams.get('q') || '')
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<TranslationRecord | null>(null)
   const limit = 20
 
   const fetchList = useCallback(async (initial = false) => {
@@ -26,17 +25,27 @@ export function HistoryView() {
     }
   }, [search, page])
 
-  const fetchDetail = useCallback(async (taskId: string) => {
-    const response = await fetch(`/api/tasks/${taskId}`)
-    if (response.ok) setExpanded(await response.json())
-  }, [])
-
   useEffect(() => {
     const timer = window.setTimeout(() => void fetchList(true), 0)
     return () => window.clearTimeout(timer)
   }, [fetchList])
 
-  const onTask = useCallback((task: TranslationSummary, completed: boolean) => {
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (search) params.set('q', search)
+    if (page > 1) params.set('page', String(page))
+    const query = params.toString()
+    window.history.replaceState(window.history.state, '', `/history${query ? `?${query}` : ''}`)
+  }, [page, search])
+
+  useEffect(() => {
+    if (!loading && typeof window.history.state?.scrollY === 'number') {
+      const scrollY = window.history.state.scrollY
+      requestAnimationFrame(() => window.scrollTo({ top: scrollY }))
+    }
+  }, [loading])
+
+  const onTask = useCallback((task: TranslationSummary) => {
     setItems(previous => {
       const index = previous.findIndex(item => item.task_id === task.task_id)
       if (index >= 0) return previous.map(item => item.task_id === task.task_id ? task : item)
@@ -44,27 +53,20 @@ export function HistoryView() {
       return previous
     })
     if (page === 1 && !search) setTotal(value => value + (items.some(item => item.task_id === task.task_id) ? 0 : 1))
-    if (completed && expanded?.task_id === task.task_id) void fetchDetail(task.task_id)
-  }, [page, search, items, expanded?.task_id, fetchDetail])
+  }, [page, search, items])
 
   useTaskEvents({ onTask, onReconnect: () => void fetchList() })
 
   const action = async (taskId: string, name: 'cancel' | 'retry') => {
     const response = await fetch(`/api/tasks/${taskId}/${name}`, { method: 'POST' })
-    if (response.ok) onTask(await response.json(), false)
+    if (response.ok) onTask(await response.json())
     void fetchList()
-  }
-
-  const toggleDetail = (taskId: string) => {
-    if (expanded?.task_id === taskId) setExpanded(null)
-    else void fetchDetail(taskId)
   }
 
   const triggerEmbed = async (taskId: string) => {
     const response = await fetch(`/api/translations/${taskId}/embed`, { method: 'POST' })
     if (response.ok) {
       setItems(previous => previous.map(item => item.task_id === taskId ? { ...item, embedding_status: 'building' } : item))
-      if (expanded?.task_id === taskId) setExpanded(current => current ? { ...current, embedding_status: 'building' } : current)
     }
   }
 
@@ -85,7 +87,6 @@ export function HistoryView() {
     if (!response.ok) return
     setItems(previous => previous.filter(task => task.task_id !== item.task_id))
     setTotal(value => Math.max(0, value - 1))
-    if (expanded?.task_id === item.task_id) setExpanded(null)
   }
 
   const totalPages = Math.ceil(total / limit)
@@ -103,12 +104,10 @@ export function HistoryView() {
         {loading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-16 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse" />)}</div> : items.length ? (
           <TaskList
             items={items}
-            expandedTaskId={expanded?.task_id}
-            expandedContent={expanded ? <CompareView taskId={expanded.task_id} original={expanded.original} translated={expanded.translated} isStreaming={expanded.status !== 'completed'} translatedCount={expanded.current} totalChunks={expanded.total} embeddingStatus={expanded.embedding_status} onTriggerEmbed={expanded.status === 'completed' ? () => void triggerEmbed(expanded.task_id) : undefined} /> : undefined}
             showDownload
             onCancel={id => void action(id, 'cancel')}
             onRetry={id => void action(id, 'retry')}
-            onView={toggleDetail}
+            onView={onOpenTask}
             onDownload={item => void download(item)}
             onEmbed={id => void triggerEmbed(id)}
             onDelete={item => void remove(item)}

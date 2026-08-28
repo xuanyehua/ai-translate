@@ -1,10 +1,19 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FileUpload } from './components/FileUpload'
 import type { PendingUpload } from './components/FileUpload'
 import { HistoryView } from './components/HistoryView'
+import { TaskDetailPage } from './components/TaskDetailPage'
 import { WorklistView } from './components/WorklistView'
 
 type AppView = 'translate' | 'history'
+
+function currentRoute() {
+  const detailMatch = window.location.pathname.match(/^\/tasks\/([^/]+)$/)
+  if (detailMatch) return { view: 'detail' as const, taskId: decodeURIComponent(detailMatch[1]) }
+  const legacyTaskId = new URLSearchParams(window.location.search).get('task')
+  if (legacyTaskId) return { view: 'detail' as const, taskId: legacyTaskId }
+  return { view: window.location.pathname === '/history' ? 'history' as const : 'translate' as const }
+}
 
 const LANGUAGES = [
   { value: '中文', label: '中文' },
@@ -17,7 +26,31 @@ const LANGUAGES = [
 ]
 
 export default function App() {
-  const [view, setView] = useState<AppView>('translate')
+  const [route, setRoute] = useState(currentRoute)
+
+  useEffect(() => {
+    const onPopState = () => setRoute(currentRoute())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  const navigate = useCallback((url: string, options?: { detail?: boolean }) => {
+    window.history.replaceState({ ...window.history.state, scrollY: window.scrollY }, '')
+    window.history.pushState(options?.detail ? { returnToHistory: true } : {}, '', url)
+    setRoute(currentRoute())
+    window.scrollTo({ top: 0 })
+  }, [])
+
+  if (route.view === 'detail') {
+    return <TaskDetailPage taskId={route.taskId} onBack={() => {
+      if (window.history.state?.returnToHistory) window.history.back()
+      else navigate('/history')
+    }} />
+  }
+  return <MainApp view={route.view} onNavigate={navigate} />
+}
+
+function MainApp({ view, onNavigate }: { view: AppView; onNavigate: (url: string, options?: { detail?: boolean }) => void }) {
   const [targetLang, setTargetLang] = useState('中文')
   const [files, setFiles] = useState<PendingUpload[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -81,8 +114,8 @@ export default function App() {
             <h1 className="text-xl font-semibold text-slate-900 dark:text-white">AI Translate</h1>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => setView('translate')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'translate' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译新文档</button>
-            <button onClick={() => setView('history')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'history' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译历史</button>
+            <button onClick={() => onNavigate('/')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'translate' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译新文档</button>
+            <button onClick={() => onNavigate('/history')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'history' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译历史</button>
           </div>
         </div>
       </header>
@@ -108,7 +141,7 @@ export default function App() {
             </section>
             <WorklistView refreshToken={refreshToken} />
           </div>
-        ) : <HistoryView />}
+        ) : <HistoryView onOpenTask={taskId => onNavigate(`/tasks/${encodeURIComponent(taskId)}`, { detail: true })} />}
       </main>
     </div>
   )

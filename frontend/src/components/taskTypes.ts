@@ -19,6 +19,18 @@ export interface TranslationSummary {
 export interface TranslationRecord extends TranslationSummary {
   original: string
   translated: string
+  alignment: TranslationAlignment
+}
+
+export interface AlignedChunk {
+  index: number
+  original: string
+  translated: string | null
+}
+
+export interface TranslationAlignment {
+  mode: 'exact' | 'reconstructed' | 'fallback'
+  chunks?: AlignedChunk[]
 }
 
 export const ACTIVE_STATUSES = new Set(['queued', 'parsing', 'translating', 'saving', 'indexing', 'interrupted'])

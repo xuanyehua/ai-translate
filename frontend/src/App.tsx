@@ -3,6 +3,8 @@ import { FileUpload } from './components/FileUpload'
 import type { PendingUpload } from './components/FileUpload'
 import { HistoryView } from './components/HistoryView'
 import { TaskDetailPage } from './components/TaskDetailPage'
+import { ThemeSelector } from './components/ThemeSelector'
+import type { ThemePreference } from './components/ThemeSelector'
 import { WorklistView } from './components/WorklistView'
 
 type AppView = 'translate' | 'history'
@@ -27,6 +29,22 @@ const LANGUAGES = [
 
 export default function App() {
   const [route, setRoute] = useState(currentRoute)
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    const saved = localStorage.getItem('ai-translate-theme')
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
+  })
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = () => {
+      document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'system' && media.matches))
+      document.documentElement.style.colorScheme = theme === 'system' ? 'light dark' : theme
+    }
+    applyTheme()
+    localStorage.setItem('ai-translate-theme', theme)
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
+  }, [theme])
 
   useEffect(() => {
     const onPopState = () => setRoute(currentRoute())
@@ -42,15 +60,15 @@ export default function App() {
   }, [])
 
   if (route.view === 'detail') {
-    return <TaskDetailPage taskId={route.taskId} onBack={() => {
+    return <TaskDetailPage taskId={route.taskId} theme={theme} onThemeChange={setTheme} onBack={() => {
       if (window.history.state?.returnToHistory) window.history.back()
       else navigate('/history')
     }} />
   }
-  return <MainApp view={route.view} onNavigate={navigate} />
+  return <MainApp view={route.view} onNavigate={navigate} theme={theme} onThemeChange={setTheme} />
 }
 
-function MainApp({ view, onNavigate }: { view: AppView; onNavigate: (url: string, options?: { detail?: boolean }) => void }) {
+function MainApp({ view, onNavigate, theme, onThemeChange }: { view: AppView; onNavigate: (url: string, options?: { detail?: boolean }) => void; theme: ThemePreference; onThemeChange: (theme: ThemePreference) => void }) {
   const [targetLang, setTargetLang] = useState('中文')
   const [files, setFiles] = useState<PendingUpload[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -116,6 +134,9 @@ function MainApp({ view, onNavigate }: { view: AppView; onNavigate: (url: string
           <div className="flex items-center gap-1">
             <button onClick={() => onNavigate('/')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'translate' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译新文档</button>
             <button onClick={() => onNavigate('/history')} className={`px-3 py-2 rounded-lg text-sm font-medium ${view === 'history' ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400'}`}>翻译历史</button>
+            <div className="ml-2 border-l border-slate-200 pl-3 dark:border-slate-700">
+              <ThemeSelector value={theme} onChange={onThemeChange} />
+            </div>
           </div>
         </div>
       </header>
@@ -139,7 +160,7 @@ function MainApp({ view, onNavigate }: { view: AppView; onNavigate: (url: string
                 </button>
               </div>
             </section>
-            <WorklistView refreshToken={refreshToken} />
+            <WorklistView refreshToken={refreshToken} onOpenTask={taskId => onNavigate(`/tasks/${encodeURIComponent(taskId)}`, { detail: true })} />
           </div>
         ) : <HistoryView onOpenTask={taskId => onNavigate(`/tasks/${encodeURIComponent(taskId)}`, { detail: true })} />}
       </main>

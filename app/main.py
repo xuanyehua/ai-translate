@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import mineru_service
 from app.parser import parse_document
-from app.translator import translate_document_stream
+from app.translator import _build_chunks, translate_document_stream
 from app.converter import convert
 from app.storage import (
     save_translation,
@@ -46,6 +46,7 @@ from app.task_store import (
     import_completed_task,
     init_db,
     list_tasks,
+    load_chunk_records,
     load_chunks,
     recover_tasks,
     request_cancel,
@@ -180,7 +181,56 @@ def _task_payload(task_id: str, include_content: bool = True) -> dict:
         payload["translated"] = "\n\n".join(chunks[index] for index in sorted(chunks))
         if not payload["translated"]:
             payload["translated"] = load_translated(task_id) or ""
+        payload["alignment"] = _task_alignment(payload, load_chunk_records(task_id))
     return payload
+
+
+def _task_alignment(task: dict, records: list[dict]) -> dict:
+    original = task.get("original", "")
+    if not original or not records:
+        return {"mode": "fallback"}
+
+    total = task.get("total", 0)
+    indices = [record["chunk_index"] for record in records]
+    expected_indices = list(range(len(records)))
+    if not total or indices != expected_indices or len(records) > total:
+        return {"mode": "fallback"}
+
+    stored_sources = [record.get("source_text") for record in records]
+    has_exact_sources = all(source is not None for source in stored_sources)
+    if has_exact_sources and len(records) == total:
+        return {
+            "mode": "exact",
+            "chunks": [
+                {
+                    "index": record["chunk_index"],
+                    "original": record["source_text"],
+                    "translated": record["translated_text"],
+                }
+                for record in records
+            ],
+        }
+
+    source_chunks = _build_chunks(original)
+    if total != len(source_chunks):
+        return {"mode": "fallback"}
+    if has_exact_sources and any(
+        stored_sources[index] != source_chunks[index] for index in range(len(records))
+    ):
+        return {"mode": "fallback"}
+
+    translated_by_index = {record["chunk_index"]: record["translated_text"] for record in records}
+    return {
+        "mode": "exact" if has_exact_sources else "reconstructed",
+        "chunks": [
+            {
+                "index": index,
+                "original": source,
+                "translated": translated_by_index.get(index),
+            }
+            for index, source in enumerate(source_chunks)
+        ],
+    }
 
 
 @app.post("/api/tasks", status_code=202)
@@ -558,9 +608,20 @@ async def trigger_embedding(task_id: str):
 
 
 @app.post("/api/translate/{task_id}/chat")
-async def chat_with_document(task_id: str, question: str = Form(...)):
+async def chat_with_document(
+    task_id: str,
+    question: str = Form(...),
+    quote: str | None = Form(None),
+    quote_source: str | None = Form(None),
+):
     if not question.strip():
         raise HTTPException(400, "Question cannot be empty")
+
+    normalized_quote = quote.strip() if quote else None
+    if normalized_quote and quote_source not in ("original", "translated"):
+        raise HTTPException(400, "quote_source must be original or translated")
+    if normalized_quote and len(normalized_quote) > 4000:
+        raise HTTPException(400, "Quote cannot exceed 4000 characters")
 
     meta = load_meta(task_id)
     if meta is None:
@@ -580,7 +641,13 @@ async def chat_with_document(task_id: str, question: str = Form(...)):
 
     # Append user message before generating
     q = question.strip()
-    append_chat_message(task_id, "user", q)
+    append_chat_message(
+        task_id,
+        "user",
+        q,
+        quote=normalized_quote,
+        quote_source=quote_source if normalized_quote else None,
+    )
 
     # Get history (excluding the just-appended user message; we'll add fresh in prompt)
     history = load_chat_history(task_id, limit=11)
@@ -592,7 +659,13 @@ async def chat_with_document(task_id: str, question: str = Form(...)):
 
     async def event_stream():
         full_answer_parts: list[str] = []
-        async for event, data in generate_answer_stream(store, q, history=history):
+        async for event, data in generate_answer_stream(
+            store,
+            q,
+            history=history,
+            quote=normalized_quote,
+            quote_source=quote_source,
+        ):
             yield _sse_event(event, data)
             if event == "chunk":
                 full_answer_parts.append(data.get("text", ""))

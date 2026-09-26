@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react'
 import { CompareView } from './CompareView'
 import { ACTIVE_STATUSES } from './taskTypes'
 import type { TranslationRecord } from './taskTypes'
+import { ThemeSelector } from './ThemeSelector'
+import type { ThemePreference } from './ThemeSelector'
 
 interface Props {
   taskId: string
   onBack: () => void
+  theme: ThemePreference
+  onThemeChange: (theme: ThemePreference) => void
 }
 
-export function TaskDetailPage({ taskId, onBack }: Props) {
+export function TaskDetailPage({ taskId, onBack, theme, onThemeChange }: Props) {
   const [task, setTask] = useState<TranslationRecord | null>(null)
   const [error, setError] = useState('')
 
@@ -53,10 +57,13 @@ export function TaskDetailPage({ taskId, onBack }: Props) {
             <h1 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{task?.filename || '任务详情'}</h1>
             {task && <p className="text-xs text-slate-500 mt-0.5">{task.message || task.status}</p>}
           </div>
-          <button onClick={onBack} className="shrink-0 px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">← 返回翻译历史</button>
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeSelector value={theme} onChange={onThemeChange} />
+            <button onClick={onBack} className="px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">← 返回翻译历史</button>
+          </div>
         </div>
       </header>
-      <main className="max-w-[1600px] mx-auto px-6 py-6">
+      <main className="max-w-[1900px] mx-auto px-6 py-6">
         {error && !task ? (
           <div className="py-20 text-center text-red-500">{error}</div>
         ) : !task || !task.original ? (
@@ -69,6 +76,7 @@ export function TaskDetailPage({ taskId, onBack }: Props) {
             taskId={task.task_id}
             original={task.original}
             translated={task.translated}
+            alignment={task.alignment}
             isStreaming={ACTIVE_STATUSES.has(task.status)}
             translatedCount={task.current}
             totalChunks={task.total}

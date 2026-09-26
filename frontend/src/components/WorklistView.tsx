@@ -6,9 +6,10 @@ import { useTaskEvents } from './useTaskEvents'
 
 interface Props {
   refreshToken: number
+  onOpenTask: (taskId: string) => void
 }
 
-export function WorklistView({ refreshToken }: Props) {
+export function WorklistView({ refreshToken, onOpenTask }: Props) {
   const [items, setItems] = useState<TranslationSummary[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -62,7 +63,7 @@ export function WorklistView({ refreshToken }: Props) {
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-16 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />)}</div>
       ) : items.length ? (
-        <TaskList items={items} onCancel={id => void action(id, 'cancel')} onRetry={id => void action(id, 'retry')} onDelete={item => void remove(item)} />
+        <TaskList items={items} onCancel={id => void action(id, 'cancel')} onRetry={id => void action(id, 'retry')} onView={onOpenTask} canView={item => item.status === 'translating'} onDelete={item => void remove(item)} />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-10 text-center text-sm text-slate-500">暂无等待处理的任务</div>
       )}

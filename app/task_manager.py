@@ -98,7 +98,7 @@ class TaskManager:
             if self._cancelled(task_id):
                 return
             translated = await asyncio.to_thread(translator.translate, chunk, task["target_lang"])
-            save_chunk(task_id, index, translated)
+            save_chunk(task_id, index, translated, chunk)
             completed[index] = translated
             update_task(
                 task_id, current=len(completed), total=len(source_chunks),

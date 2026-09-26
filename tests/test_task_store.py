@@ -17,8 +17,13 @@ def test_task_lifecycle_and_chunks():
     assert created["status"] == "queued"
 
     task_store.update_task("task1", status="translating", stage="translating", current=1, total=2)
-    task_store.save_chunk("task1", 0, "第一段")
+    task_store.save_chunk("task1", 0, "第一段", "First paragraph")
     assert task_store.load_chunks("task1") == {0: "第一段"}
+    assert task_store.load_chunk_records("task1") == [{
+        "chunk_index": 0,
+        "source_text": "First paragraph",
+        "translated_text": "第一段",
+    }]
 
     current = task_store.get_task("task1")
     assert current is not None
@@ -108,3 +113,22 @@ def test_delete_task_cascades_chunks():
     assert task_store.delete_task("delete-me") is True
     assert task_store.get_task("delete-me") is None
     assert task_store.load_chunks("delete-me") == {}
+
+
+def test_init_db_adds_source_text_to_legacy_chunk_table():
+    task_store.DB_PATH.unlink()
+    with sqlite3.connect(task_store.DB_PATH) as conn:
+        conn.execute(
+            """CREATE TABLE task_chunks (
+            task_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            translated_text TEXT NOT NULL,
+            PRIMARY KEY (task_id, chunk_index)
+            )"""
+        )
+
+    task_store.init_db()
+
+    with sqlite3.connect(task_store.DB_PATH) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(task_chunks)")}
+    assert "source_text" in columns

@@ -255,6 +255,8 @@ async def generate_answer_stream(
     store: ChunkStore,
     question: str,
     history: Optional[list[dict]] = None,
+    quote: Optional[str] = None,
+    quote_source: Optional[str] = None,
 ):
     """SSE async generator: search chunks, build prompt with history, stream LLM answer.
 
@@ -276,8 +278,14 @@ async def generate_answer_stream(
         return
 
     context = "\n\n---\n\n".join(relevant_chunks)
+    quote_context = ""
+    if quote:
+        source_label = "原文" if quote_source == "original" else "译文"
+        quote_context = f"\n\n用户特别引用的{source_label}内容：\n{quote}"
+
     user_prompt = f"""文档片段：
 {context}
+{quote_context}
 
 当前问题：{question}"""
 

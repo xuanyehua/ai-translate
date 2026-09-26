@@ -271,7 +271,14 @@ def _chat_path(task_id: str) -> Path:
     return task_dir(task_id) / "chat.jsonl"
 
 
-def append_chat_message(task_id: str, role: str, content: str) -> bool:
+def append_chat_message(
+    task_id: str,
+    role: str,
+    content: str,
+    *,
+    quote: Optional[str] = None,
+    quote_source: Optional[str] = None,
+) -> bool:
     """Append a chat message to chat.jsonl."""
     try:
         path = _chat_path(task_id)
@@ -281,6 +288,9 @@ def append_chat_message(task_id: str, role: str, content: str) -> bool:
             "content": content,
             "ts": datetime.now(timezone.utc).isoformat(),
         }
+        if quote:
+            msg["quote"] = quote
+            msg["quote_source"] = quote_source
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(msg, ensure_ascii=False) + "\n")
         return True

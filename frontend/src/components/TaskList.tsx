@@ -26,23 +26,25 @@ interface Props {
   onCancel: (taskId: string) => void
   onRetry: (taskId: string) => void
   onView?: (taskId: string) => void
+  canView?: (item: TranslationSummary) => boolean
   onDownload?: (item: TranslationSummary) => void
   onEmbed?: (taskId: string) => void
   onDelete?: (item: TranslationSummary) => void
   expandedContent?: ReactNode
 }
 
-export function TaskList({ items, expandedTaskId, showDownload, onCancel, onRetry, onView, onDownload, onEmbed, onDelete, expandedContent }: Props) {
+export function TaskList({ items, expandedTaskId, showDownload, onCancel, onRetry, onView, canView, onDownload, onEmbed, onDelete, expandedContent }: Props) {
+  const isViewable = (item: TranslationSummary) => Boolean(onView && (!canView || canView(item)))
   return (
     <div className="space-y-2">
       {items.map(item => (
         <Fragment key={item.task_id}>
         <div
-          role={onView ? 'button' : undefined}
-          tabIndex={onView ? 0 : undefined}
-          onClick={() => onView?.(item.task_id)}
-          onKeyDown={event => { if (onView && (event.key === 'Enter' || event.key === ' ')) onView(item.task_id) }}
-          className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-4 transition-all ${onView ? 'cursor-pointer hover:border-violet-300 dark:hover:border-violet-700 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40' : ''}`}
+          role={isViewable(item) ? 'button' : undefined}
+          tabIndex={isViewable(item) ? 0 : undefined}
+          onClick={() => { if (isViewable(item)) onView?.(item.task_id) }}
+          onKeyDown={event => { if (isViewable(item) && (event.key === 'Enter' || event.key === ' ')) onView?.(item.task_id) }}
+          className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center gap-4 transition-all ${isViewable(item) ? 'cursor-pointer hover:border-violet-300 dark:hover:border-violet-700 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40' : ''}`}
         >
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.filename}</p>
@@ -55,7 +57,7 @@ export function TaskList({ items, expandedTaskId, showDownload, onCancel, onRetr
             {item.status === 'completed' && (item.embedding_status === 'pending' || item.embedding_status === 'failed') && onEmbed && <button onClick={() => onEmbed(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">构建索引</button>}
             {ACTIVE_STATUSES.has(item.status) && <button onClick={() => onCancel(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">取消</button>}
             {(item.status === 'failed' || item.status === 'cancelled') && <button onClick={() => onRetry(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20">重试</button>}
-            {onView && <button onClick={() => onView(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20">{expandedTaskId === item.task_id ? '收起' : '查看'}</button>}
+            {isViewable(item) && <button onClick={() => onView?.(item.task_id)} className="px-3 py-1.5 rounded-lg text-xs text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20">{expandedTaskId === item.task_id ? '收起' : '查看'}</button>}
             {showDownload && item.status === 'completed' && onDownload && <button onClick={() => onDownload(item)} className="px-3 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">下载</button>}
             {!ACTIVE_STATUSES.has(item.status) && onDelete && <button onClick={() => onDelete(item)} className="px-3 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">删除</button>}
           </div>

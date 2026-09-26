@@ -28,11 +28,15 @@ dev:
 			wait "$$backend_pid" 2>/dev/null || true; \
 		}; \
 		trap cleanup EXIT INT TERM; \
+		NO_PROXY="$${NO_PROXY:+$$NO_PROXY,}127.0.0.1,localhost" \
+		no_proxy="$${no_proxy:+$$no_proxy,}127.0.0.1,localhost" \
 		MINERU_MODEL_SOURCE=$(MINERU_MODEL_SOURCE) uv run uvicorn app.main:app --host $(BACKEND_HOST) --port $(BACKEND_PORT) & \
 		backend_pid=$$!; \
 		cd frontend && npm run dev -- --host $(FRONTEND_HOST) --port $(FRONTEND_PORT)
 
 backend:
+	NO_PROXY="$${NO_PROXY:+$$NO_PROXY,}127.0.0.1,localhost" \
+	no_proxy="$${no_proxy:+$$no_proxy,}127.0.0.1,localhost" \
 	MINERU_MODEL_SOURCE=$(MINERU_MODEL_SOURCE) uv run uvicorn app.main:app --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 frontend:

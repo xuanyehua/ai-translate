@@ -1,5 +1,10 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
+
+html { background-color: #f8fafc; }
+html.dark { background-color: #0f172a; }
+body { margin: 0; }
 
 /* Explicit markdown content styles (insurance if typography plugin doesn't fully kick in) */
 .markdown-content h1 { font-size: 1.5rem; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem; color: #1e293b; }

@@ -49,6 +49,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS task_chunks (
                 task_id TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
                 chunk_index INTEGER NOT NULL,
+                source_text TEXT,
                 translated_text TEXT NOT NULL,
                 PRIMARY KEY (task_id, chunk_index)
             );
@@ -59,6 +60,9 @@ def init_db() -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
         if "content_hash" not in columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN content_hash TEXT")
+        chunk_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_chunks)").fetchall()}
+        if "source_text" not in chunk_columns:
+            conn.execute("ALTER TABLE task_chunks ADD COLUMN source_text TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_content_lang "
             "ON tasks(content_hash, target_lang) WHERE content_hash IS NOT NULL"
@@ -174,11 +178,12 @@ def recover_tasks() -> list[str]:
     return ids
 
 
-def save_chunk(task_id: str, index: int, text: str) -> None:
+def save_chunk(task_id: str, index: int, text: str, source_text: str | None = None) -> None:
     with _connect() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO task_chunks(task_id, chunk_index, translated_text) VALUES (?, ?, ?)",
-            (task_id, index, text),
+            """INSERT OR REPLACE INTO task_chunks
+            (task_id, chunk_index, source_text, translated_text) VALUES (?, ?, ?, ?)""",
+            (task_id, index, source_text, text),
         )
 
 
@@ -189,6 +194,16 @@ def load_chunks(task_id: str) -> dict[int, str]:
             (task_id,),
         ).fetchall()
     return {row[0]: row[1] for row in rows}
+
+
+def load_chunk_records(task_id: str) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """SELECT chunk_index, source_text, translated_text
+            FROM task_chunks WHERE task_id=? ORDER BY chunk_index""",
+            (task_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def clear_chunks(task_id: str) -> None:
